@@ -1,0 +1,4 @@
+<resources>
+    <!-- Window theme only; everything inside is Compose (see ui/theme/Theme.kt). -->
+    <style name="Theme.Tellyscope" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
