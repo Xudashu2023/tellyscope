@@ -1,0 +1,45 @@
+Tellyscope
+Copyright (C) 2026 Tellyscope contributors
+
+Tellyscope is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3 (see LICENSE).
+
+This product includes or is derived from the following third-party work.
+
+--------------------------------------------------------------------------------
+Kadb — https://github.com/flyfishxu/Kadb
+License: Apache License 2.0
+Used as a library: the ADB protocol client (connect, pair, shell).
+Kadb is itself based on Dadb (https://github.com/mobile-dev-inc/dadb, Apache-2.0).
+
+--------------------------------------------------------------------------------
+spake2-java — https://github.com/Flyfish233/spake2-java
+License: GNU General Public License v3.0
+Used as a library (via Kadb): SPAKE2 key exchange for Android 11+ wireless
+debugging pairing.
+
+--------------------------------------------------------------------------------
+cleanyourtv — https://github.com/Gathin23/cleanyourtv
+License: MIT, Copyright (c) 2026 Gathin
+Debloat package lists are adapted from this project.
+
+--------------------------------------------------------------------------------
+The MIT License text, as it applies to cleanyourtv:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
