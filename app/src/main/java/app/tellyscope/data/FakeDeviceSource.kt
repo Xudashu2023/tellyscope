@@ -3,13 +3,16 @@
 package app.tellyscope.data
 
 import app.tellyscope.adb.ApkInfo
+import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.InstallResult
 import app.tellyscope.adb.InstalledVersion
 import app.tellyscope.adb.Progress
 import app.tellyscope.adb.RemoteKey
 import app.tellyscope.adb.TvFile
 import app.tellyscope.adb.TvFolder
+import app.tellyscope.adb.Tweak
 import java.io.File
+import java.io.IOException
 import java.time.YearMonth
 import kotlin.random.Random
 import kotlinx.coroutines.currentCoroutineContext
@@ -198,13 +201,15 @@ class FakeDeviceSource(
         when (action) {
             Action.Disable -> list[i] = app.copy(enabled = false)
             Action.Enable -> list[i] = app.copy(enabled = true)
-            Action.Stop, Action.Open -> Unit
+            Action.Uninstall -> list.removeAt(i)
+            Action.Stop, Action.Open, Action.Change, Action.ClearCaches, Action.Home -> Unit
         }
         val undo = when (action) {
             Action.Stop -> Action.Open
             Action.Disable -> Action.Enable
             Action.Enable -> Action.Disable
-            Action.Open -> null
+            Action.Home -> Action.Enable
+            Action.Open, Action.Uninstall, Action.Change, Action.ClearCaches -> null
         }
         return book.record(deviceId, clock(), action, packageName, app.label, undo, undoing)
     }
@@ -284,6 +289,14 @@ class FakeDeviceSource(
 
     override suspend fun pickList(deviceId: String, listId: String) = Unit
 
+    private var listSource: String? = null
+
+    override suspend fun listSource() = listSource
+
+    override suspend fun setListSource(url: String?) {
+        listSource = url?.let { normalize(it) ?: throw IllegalStateException("the address has to start with https://") }
+    }
+
     override suspend fun press(deviceId: String, key: RemoteKey): Boolean {
         delay(60)
         return true
@@ -300,6 +313,39 @@ class FakeDeviceSource(
         backAt[deviceId] = clock() + 20_000
         return true
     }
+
+    /** Global settings per TV, for the tweaks card. */
+    private val settings = mutableMapOf<String, MutableMap<String, String?>>()
+
+    private fun settingsFor(deviceId: String) = settings.getOrPut(deviceId) { mutableMapOf("private_dns_mode" to "opportunistic") }
+
+    override suspend fun tweaks(deviceId: String): TvTweaks {
+        val s = settingsFor(deviceId)
+        return TvSettings.tweaks(s, s, sdk = 30)
+    }
+
+    override suspend fun change(deviceId: String, tweak: Tweak, values: Map<String, String?>, undoing: Long?): HistoryEntry {
+        delay(300)
+        val s = settingsFor(deviceId)
+        val before = values.keys.associateWith { s[it] }
+        s.putAll(values)
+        return book.record(deviceId, clock(), Action.Change, tweak.name, TvSettings.label(tweak, s), Action.Change, undoing, before)
+    }
+
+    override suspend fun clearCaches(deviceId: String): Long {
+        delay(800)
+        book.record(deviceId, clock(), Action.ClearCaches, "", TvSettings.CACHES, undo = null)
+        return 1_340_000
+    }
+
+    override suspend fun screenshot(deviceId: String, sink: Sink) {
+        delay(500)
+        throw IOException("the demo TV has no screen to capture")
+    }
+
+    override suspend fun connectionRequest(deviceId: String): ConnectionRequest? = null
+
+    override suspend fun answerRequest(deviceId: String, request: ConnectionRequest, allow: Boolean, always: Boolean) = false
 
     private companion object {
         val fakeList = DeviceList(
@@ -321,8 +367,8 @@ class FakeDeviceSource(
         val baseApps = listOf(
             AppInfo("com.spocky.projengmenu", "Projectivy Launcher", 0xFF3D5AFE, false, true, "this is your home screen", "4.52"),
             AppInfo("com.google.android.youtube.tv", "YouTube", 0xFFC4302B, false, true, null, "4.40.303"),
-            AppInfo("com.netflix.ninja", "Netflix", 0xFFB20710, false, true, null, "11.2.0"),
-            AppInfo("org.jellyfin.androidtv", "Jellyfin", 0xFF7B5EA7, false, true, null, "0.17.4"),
+            AppInfo("com.netflix.ninja", "Netflix", 0xFFB20710, false, true, null, "11.2.0", removable = true),
+            AppInfo("org.jellyfin.androidtv", "Jellyfin", 0xFF7B5EA7, false, true, null, "0.17.4", removable = true),
             AppInfo("com.xgimi.assistant", "XGIMI Assistant", null, true, true, null, "2.1.8"),
             AppInfo("com.xgimi.ota", "XGIMI Updates", null, true, true, null, "1.4.0"),
             AppInfo("com.google.android.tvrecommendations", "TV Recommendations", null, true, false, null, "1.0"),

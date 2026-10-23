@@ -22,6 +22,13 @@ class HistoryBookTest {
 
     private val tv = "tv-1"
 
+    @Test fun aSettingsPreviousValuesSurviveARestart() {
+        val file = tmp.root.resolve("history.tsv")
+        val previous = mapOf("private_dns_mode" to "opportunistic", "private_dns_specifier" to null, "odd" to "a=b,c")
+        val change = HistoryBook(file).record(tv, 1_000, Action.Change, "PRIVATE_DNS", "Private DNS set to x", Action.Change, previous = previous)
+        assertEquals(listOf(change), HistoryBook(file).entries(tv))
+    }
+
     @Test fun historyAndUndoSurviveARestart() {
         val file = tmp.root.resolve("history.tsv")
         val before = HistoryBook(file)
@@ -39,6 +46,19 @@ class HistoryBookTest {
         assertEquals(2_000L, again.single { it.id == disabled.id }.undoneAt)
         assertNull(again.first().undoneAt)
         assertTrue(again.first().id > disabled.id)
+    }
+
+    @Test fun aHomeSwitchSurvivesARestartAndRestoreTurnsTheOldLauncherOn() {
+        val file = tmp.root.resolve("history.tsv")
+        val previous = mapOf("from" to "com.google.android.tvlauncher/.MainActivity", "to" to "com.spocky.projengmenu/.Main")
+        val switch = HistoryBook(file).record(tv, 1_000, Action.Home, "com.google.android.tvlauncher", "Projectivy Launcher", Action.Enable, previous = previous)
+        val after = HistoryBook(file)
+        assertEquals(listOf(switch), after.entries(tv))
+        assertEquals(listOf("com.google.android.tvlauncher"), after.restorable(tv))
+        assertEquals(switch.id, after.openDisable(tv, "com.google.android.tvlauncher"))
+
+        after.record(tv, 2_000, Action.Enable, "com.google.android.tvlauncher", "Android TV Home", undo = null, undoing = switch.id)
+        assertTrue(after.restorable(tv).isEmpty())
     }
 
     @Test fun baselineIsWrittenOnlyOnce() {
@@ -69,6 +89,18 @@ class HistoryBookTest {
         val entries = HistoryBook(file).entries(tv)
         assertEquals(1, entries.size)
         assertEquals("Net flix", entries.single().label)
+    }
+
+    @Test fun uninstallHasNoUndoAndRestoreForgetsTheApp() = runTest {
+        val source = FakeDeviceSource()
+        val id = "tv"
+        source.act(id, Action.Disable, "com.netflix.ninja")
+        val gone = source.act(id, Action.Uninstall, "com.netflix.ninja")
+
+        assertNull(gone.undo)
+        assertTrue(source.apps(id).none { it.packageName == "com.netflix.ninja" })
+        assertEquals(emptyList<String>(), HistoryBook.leftDisabled(source.history(id)))
+        assertEquals(emptyList<String>(), source.restoreAll(id).map { it.packageName })
     }
 
     @Test fun restoreAllTurnsOnOnlyWhatTellyscopeDisabled() = runTest {

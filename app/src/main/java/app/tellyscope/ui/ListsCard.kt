@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.Suggested
 import app.tellyscope.data.Suggestions
+import app.tellyscope.data.sourceName
 
 /** Body of the "Suggested for this TV" section: one line on what the list offers; the Debloat tile is the way in. */
 @Composable
@@ -91,6 +92,8 @@ fun DebloatScreen(
     onDisable: (List<String>) -> Unit,
     back: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    /** The user's own list source, null for the default; set in Settings. */
+    source: String? = null,
 ) {
     val ready = lists as? Suggestions.Ready
     val devices = when (lists) {
@@ -202,6 +205,12 @@ fun DebloatScreen(
                     Text(
                         "From the list for ${showing.list.name}. Untick anything you use. Nothing is deleted: each app is hidden, and History can turn it back on.",
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                    // Nobody should debloat from a list they didn't mean to use.
+                    if (source != null) Text(
+                        "This list comes from ${sourceName(source)}, not tellyscope-devices.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
                     )
                     if (!showing.sdkMatches) Muted(
                         showing.list.testedOs?.let { "Tested on $it, not this TV's Android version, so nothing is ticked. Tick only what you know you don't use." }

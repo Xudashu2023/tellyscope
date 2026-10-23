@@ -9,8 +9,13 @@ import app.tellyscope.data.Action
 import app.tellyscope.data.AppNames
 import app.tellyscope.data.DeviceState
 import app.tellyscope.data.Snapshot
+import app.tellyscope.data.TvSettings
+import app.tellyscope.data.sourceName
+import java.text.SimpleDateFormat
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.util.Date
+import java.util.Locale
 
 /**
  * Every user-facing sentence about actions and time lives here so wording is
@@ -22,6 +27,8 @@ object Copy {
         Action.Disable -> "Disable"
         Action.Enable -> "Turn on"
         Action.Open -> "Open"
+        Action.Uninstall -> "Uninstall"
+        Action.Change, Action.ClearCaches, Action.Home -> error("$action has its own button")
     }
 
     fun confirm(action: Action) = when (action) {
@@ -29,6 +36,9 @@ object Copy {
         Action.Disable -> "Yes, disable it"
         Action.Enable -> "Yes, turn it on"
         Action.Open -> "Yes, open it"
+        Action.Uninstall -> "Yes, uninstall it"
+        Action.Home -> "Yes, switch home screen"
+        Action.Change, Action.ClearCaches -> error("$action isn't an app action")
     }
 
     /**
@@ -41,6 +51,8 @@ object Copy {
             Action.Disable -> "Hides $who and stops it running. Nothing is deleted; you can turn it back on here."
             Action.Enable -> "Turns $who back on."
             Action.Open -> "Opens $who on the TV."
+            Action.Uninstall -> "Removes $who and everything saved in it. This can't be undone; to get it back, install it again."
+            Action.Change, Action.ClearCaches, Action.Home -> error("$action isn't a one-app action")
         }
     }
 
@@ -49,7 +61,30 @@ object Copy {
         Action.Disable -> "Disabled $app"
         Action.Enable -> "Turned on $app"
         Action.Open -> "Opened $app"
+        Action.Uninstall -> "Uninstalled $app"
+        // A setting's label is the whole sentence: "Private DNS set to …".
+        Action.Change -> app
+        Action.ClearCaches -> "Cleared $app"
+        Action.Home -> "Set $app as the default launcher"
     }
+
+    /** Where the lists come from, for the Debloat screen and the snackbar after a change. */
+    fun listSource(custom: String?) =
+        if (custom == null) "Lists from tellyscope-devices, built from cleanyourtv" else "Lists from ${sourceName(custom)}"
+
+    const val MAKE_HOME = "Set as default launcher"
+
+    /**
+     * The home switch touches two apps, so it names both. The old launcher is disabled, not just
+     * replaced: otherwise many TVs switch back to it by themselves.
+     */
+    fun explainHome(app: String, pkg: String, current: String, currentPkg: String) = buildString {
+        append("Makes $app ($pkg) open when you press Home, then disables $current ($currentPkg) so the TV can't switch back by itself. ")
+        append("Undo in History turns $current back on and makes it Home again.")
+        if (currentPkg in GOOGLE_HOMES) append("\n\nSome Google TV features, like the Apps row and the Live tab, are part of $current and go away with it.")
+    }
+
+    private val GOOGLE_HOMES = setOf("com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx")
 
     /**
      * Force-stop has no true undo, and undoing a Turn on disables the app; the button says what it
@@ -110,6 +145,10 @@ object Copy {
         done == 0 -> "The TV didn't disable any of them."
         else -> "Disabled $done of $of apps; the TV refused the rest. Undo any of them from History."
     }
+
+    fun uninstallTitle(app: String) = "Uninstall $app?"
+
+    const val CANT_CHANGE = "Can't be changed"
 
     const val ANDROID_SYSTEM = AppNames.SYSTEM
 
@@ -206,7 +245,7 @@ object Copy {
 
     fun installRefused(reason: InstallRefusal, app: String) = when (reason) {
         InstallRefusal.SIGNATURE ->
-            "The $app on the TV comes from a different developer, so Android won't replace it. Tellyscope never uninstalls, so if you're sure, uninstall it on the TV first."
+            "The $app on the TV comes from a different developer, so Android won't replace it. If you're sure, uninstall it first: from Apps here if you installed it, or on the TV."
         InstallRefusal.DOWNGRADE -> "The TV has a newer $app and won't go back to an older one."
         InstallRefusal.NO_SPACE -> "The TV is out of space. Disable or uninstall something there, then try again."
         InstallRefusal.TV_SAID_NO ->
@@ -268,4 +307,40 @@ object Copy {
     fun restarting(minutes: Long) =
         if (minutes < 3) "Tellyscope reconnects on its own when the TV is back, usually within a couple of minutes."
         else "Taking a while. Some TVs turn network debugging off when they restart. If it doesn't come back, turn it on again in the TV's Developer options."
+
+    const val TWEAKS = "TV tweaks"
+    const val DNS_TITLE = "Block ads with Private DNS"
+    fun dnsState(host: String?) = host?.let { "On: $it" } ?: "Off. Turn on to block ads and trackers in every app on the TV."
+    const val DNS_TOO_OLD = "Needs Android 9 or newer. This TV is older."
+    const val DNS_DIALOG = "Block ads on the whole TV?"
+    const val DNS_TEXT = "The TV will look up every address through this ad-blocking DNS provider. AdGuard is free and needs no account. " +
+        "Tellyscope then checks the TV can still look addresses up, and puts it back if not. Undo is in History."
+    const val DNS_FIELD = "DNS provider"
+    const val DNS_BAD = "Enter a hostname like dns.adguard-dns.com. An IP address won't work here."
+    const val DNS_CONFIRM = "Turn on"
+    const val ANIMATIONS_TITLE = "Faster animations"
+    fun animationsState(scale: String?) =
+        if (scale == TvSettings.FAST) "On: menus move at twice the speed"
+        else "Off. Turn on to make menus feel snappier."
+    const val CACHES_TITLE = "Clear all app caches"
+    const val CACHES_TEXT = "Frees space by clearing every app's temporary files. App data and sign-ins stay."
+    const val CACHES_BUTTON = "Clear caches"
+    fun cachesCleared(freedKb: Long?) =
+        if (freedKb == null || freedKb <= 0) "Cleared app caches" else "Cleared app caches, freed ${bytes(freedKb * 1024)}"
+    const val SCREENSHOT_TITLE = "Screenshot"
+    const val SCREENSHOT_TEXT = "Saves what the TV shows to your phone. Protected video, like most streaming apps, shows as black."
+    const val SCREENSHOT_BUTTON = "Take screenshot"
+    fun screenshotName(at: Long) =
+        "TV screenshot " + SimpleDateFormat("yyyy-MM-dd HH.mm.ss", Locale.ROOT).format(Date(at)) + ".png"
+    const val SCREENSHOT_SAVED = "Screenshot saved to your phone"
+    const val SCREENSHOT_FAILED = "Couldn't take a screenshot. Check the TV is still connected."
+    const val REQUEST_TITLE = "Another device wants to control this TV"
+    const val REQUEST_TEXT = "The TV is asking whether to allow debugging from a device with this key fingerprint. " +
+        "Allow it only if you started this yourself and the fingerprint matches the one that device shows."
+    const val REQUEST_ALWAYS = "Always allow this device"
+    const val REQUEST_ALLOW = "Allow"
+    const val REQUEST_DENY = "Deny"
+    const val REQUEST_ALLOWED = "Allowed. That device can control the TV now."
+    const val REQUEST_DENIED = "Denied. That device can't connect."
+    const val REQUEST_GONE = "The TV's prompt had closed or changed, so nothing was pressed."
 }

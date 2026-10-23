@@ -152,9 +152,9 @@ const val KEEP_REASON = "this TV's list says it must stay on"
 fun withKeep(builtIn: String?, pkg: String, enabled: Boolean, keep: Set<String>): String? =
     builtIn ?: KEEP_REASON.takeIf { enabled && pkg in keep }
 
-/** Stop and Disable are refused for keep entries; Enable and Open always run. */
+/** Stop, Disable and Uninstall are refused for keep entries; Enable and Open always run. */
 fun keepRefuses(action: Action, pkg: String, keep: Set<String>) =
-    (action == Action.Stop || action == Action.Disable) && pkg in keep
+    (action == Action.Stop || action == Action.Disable || action == Action.Uninstall) && pkg in keep
 
 /**
  * Fetches and caches the index and device files under [dir]. A failed fetch falls back to the
@@ -168,6 +168,40 @@ class DeviceLists(
     private val lock = Mutex()
     private var index: ListIndex? = null
     private val picks = File(dir, "picks.tsv")
+    private val sourceFile = File(dir, "source.txt")
+
+    /** The folder holding `index.json`: one the user set, else [LISTS_BASE]. */
+    val base: String get() = custom() ?: LISTS_BASE
+
+    /** The user's own source, or null for tellyscope-devices. */
+    @Synchronized
+    fun custom(): String? = sourceFile.takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null }
+
+    /**
+     * Points the lists at [url], or back at [LISTS_BASE] with null. The new source must answer
+     * with a schema 1 index first; otherwise nothing changes. The cached lists are dropped, so
+     * nothing from the old source lingers; picks stay, and a pick the new source lacks falls
+     * back to matching.
+     */
+    suspend fun setSource(url: String?): SourceResult = lock.withLock {
+        val next = if (url == null) LISTS_BASE else normalize(url) ?: return@withLock SourceResult.NotHttps
+        val text = attempt { fetch(next + "index.json") }?.decodeToString()
+        // Going back to the default always works, offline too: its lists load once online.
+        if (text == null && url != null) return@withLock SourceResult.Unreachable
+        val parsed = text?.let(::parseIndex)
+        if (text != null && parsed == null) return@withLock SourceResult.NotAList
+        withContext(Dispatchers.IO) {
+            File(dir, "index.json").delete()
+            File(dir, "devices").deleteRecursively()
+            dir.mkdirs()
+            if (text != null) File(dir, "index.json").writeText(text)
+            synchronized(this@DeviceLists) {
+                if (next == LISTS_BASE) sourceFile.delete() else sourceFile.writeText(next)
+            }
+        }
+        index = parsed
+        SourceResult.Ok
+    }
 
     /**
      * Fetched once per process; later calls reuse it. Offline, the cached copy is returned and the
@@ -177,7 +211,7 @@ class DeviceLists(
         index ?: withContext(Dispatchers.IO) {
             dir.mkdirs()
             val cache = File(dir, "index.json")
-            val text = attempt { fetch(LISTS_BASE + "index.json") }?.decodeToString()
+            val text = attempt { fetch(base + "index.json") }?.decodeToString()
             text?.let(::parseIndex)?.also { cache.writeText(text); index = it }
                 ?: cache.takeIf { it.exists() }?.readText()?.let(::parseIndex)
         }
@@ -187,7 +221,7 @@ class DeviceLists(
     suspend fun list(entry: ListEntry): DeviceList? = withContext(Dispatchers.IO) {
         val cache = File(dir, entry.file) // lists/devices/<id>.json, apart from index.json
         val bytes = cache.takeIf { it.exists() }?.readBytes()?.takeIf { sha256(it) == entry.sha256 }
-            ?: attempt { fetch(LISTS_BASE + entry.file) }?.takeIf { sha256(it) == entry.sha256 }
+            ?: attempt { fetch(base + entry.file) }?.takeIf { sha256(it) == entry.sha256 }
                 ?.also { cache.parentFile?.mkdirs(); cache.writeBytes(it) }
         bytes?.let { parseList(it.decodeToString(), entry.id) }
     }
@@ -224,10 +258,44 @@ class DeviceLists(
     }
 }
 
+enum class SourceResult { Ok, NotHttps, Unreachable, NotAList }
+
+const val NOT_A_LIST = "this source isn't a Tellyscope list"
+
+/**
+ * An `https://` folder address ending in `/`, or null for anything else. A pasted `index.json`
+ * address is cut back to its folder.
+ */
+fun normalize(url: String): String? {
+    val u = url.trim().removeSuffix("index.json")
+    val parsed = try {
+        java.net.URI(u)
+    } catch (_: java.net.URISyntaxException) {
+        return null
+    }
+    if (!parsed.scheme.equals("https", ignoreCase = true) || parsed.host.isNullOrEmpty()) return null
+    // A user:token would be saved and shown on screen.
+    if (parsed.rawUserInfo != null || parsed.query != null || parsed.fragment != null) return null
+    return if (u.endsWith("/")) u else "$u/"
+}
+
+/**
+ * How a source reads on screen: `github.com/owner/repo` for raw GitHub addresses, with the branch
+ * (and any folder) after it unless that is just `main`; else host and path.
+ */
+fun sourceName(base: String): String {
+    val rest = base.substringAfter("://").trimEnd('/')
+    val raw = "raw.githubusercontent.com/"
+    if (!rest.startsWith(raw)) return rest
+    val parts = rest.removePrefix(raw).split('/')
+    val where = parts.drop(2).joinToString("/")
+    return "github.com/" + parts.take(2).joinToString("/") + if (where == "main" || where.isEmpty()) "" else " ($where)"
+}
+
 private const val MAX_BYTES = 2 shl 20 // 2 MiB; the index is ~60 KB
 
 /** Plain GET with short timeouts, so a slow network falls back to the cache rather than hanging. */
-private suspend fun download(url: String): ByteArray = withContext(Dispatchers.IO) {
+internal suspend fun download(url: String): ByteArray = withContext(Dispatchers.IO) {
     val c = URL(url).openConnection() as HttpURLConnection
     c.connectTimeout = 10_000
     c.readTimeout = 10_000

@@ -3,12 +3,14 @@
 package app.tellyscope.data
 
 import app.tellyscope.adb.ApkInfo
+import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.InstallResult
 import app.tellyscope.adb.InstalledVersion
 import app.tellyscope.adb.Progress
 import app.tellyscope.adb.RemoteKey
 import app.tellyscope.adb.TvFile
 import app.tellyscope.adb.TvFolder
+import app.tellyscope.adb.Tweak
 import kotlinx.coroutines.flow.Flow
 import okio.Sink
 import okio.Source
@@ -50,8 +52,8 @@ interface DeviceSource {
     suspend fun network(deviceId: String): NetworkInfo
 
     /**
-     * Runs an action and records it. Never uninstalls: there is no uninstall in [Action] on
-     * purpose. [undoing] is the history entry this reverses, which gets marked undone.
+     * Runs an action and records it. Uninstall runs only on apps the user installed, and has no
+     * undo. [undoing] is the history entry this reverses, which gets marked undone.
      */
     suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long? = null): HistoryEntry
 
@@ -90,6 +92,16 @@ interface DeviceSource {
     /** "Pick your TV": use list [listId] for this TV from now on. */
     suspend fun pickList(deviceId: String, listId: String)
 
+    /** Where the debloat lists come from, as the user set it; null for tellyscope-devices. */
+    suspend fun listSource(): String?
+
+    /**
+     * Reads the lists from [url] (the folder holding `index.json`) from now on, or from
+     * tellyscope-devices again with null. Throws with the reason, changing nothing, when it
+     * isn't HTTPS, can't be reached or isn't a Tellyscope list.
+     */
+    suspend fun setListSource(url: String?)
+
     /** One remote key. False when the TV answered with an error; throws when it's gone. */
     suspend fun press(deviceId: String, key: RemoteKey): Boolean
 
@@ -98,4 +110,28 @@ interface DeviceSource {
 
     /** Restarts the TV. The link drops and reconnects on its own once the TV is back. False if the TV refused. */
     suspend fun reboot(deviceId: String): Boolean
+
+    /** Private DNS and animation speed as the TV has them now. */
+    suspend fun tweaks(deviceId: String): TvTweaks
+
+    /**
+     * Writes [values] for [tweak] and records the values from before, so Undo puts them back
+     * exactly. [undoing] is the history entry this reverses. Throws with the reason when refused.
+     */
+    suspend fun change(deviceId: String, tweak: Tweak, values: Map<String, String?>, undoing: Long? = null): HistoryEntry
+
+    /** Frees every app's cache, keeping app data and sign-ins, and records it. Returns KB freed, or null when the TV can't say. */
+    suspend fun clearCaches(deviceId: String): Long?
+
+    /** A PNG of what the TV shows right now, into [sink]. */
+    suspend fun screenshot(deviceId: String, sink: Sink)
+
+    /** Another device's "Allow debugging?" prompt showing on the TV now, or null. */
+    suspend fun connectionRequest(deviceId: String): ConnectionRequest?
+
+    /**
+     * Presses Allow or Cancel on that prompt, ticking "Always allow" only when [always]. False
+     * when the prompt was gone or showed another fingerprint by then.
+     */
+    suspend fun answerRequest(deviceId: String, request: ConnectionRequest, allow: Boolean, always: Boolean): Boolean
 }

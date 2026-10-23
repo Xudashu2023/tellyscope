@@ -98,6 +98,10 @@ data class AppInfo(
     val version: String,
     /** The app's own icon as a PNG, from the TV; null shows the letter avatar. */
     val icon: ByteArray? = null,
+    /** Installed by the user (`pm list packages -3`), so Uninstall is offered. Never for apps that came with the TV. */
+    val removable: Boolean = false,
+    /** Another launcher that can replace the current home screen, [homeInstead]: "Set as default launcher" is offered. */
+    val homeInstead: String? = null,
 )
 
 data class Socket(val app: String, val remote: String, val state: String)
@@ -114,7 +118,14 @@ data class NetworkInfo(
     val traffic: List<AppTraffic>,
 )
 
-enum class Action { Stop, Disable, Enable, Open }
+/**
+ * [Change] sets one [app.tellyscope.adb.Tweak]: its entry's packageName is the tweak's name and
+ * [HistoryEntry.previous] holds what Undo writes back. [ClearCaches] has no undo. [Home] makes a
+ * launcher the home screen and disables the old one: its entry's packageName is the old launcher,
+ * the label the new one's, and [HistoryEntry.previous] holds both home activities ("from", "to").
+ * Its undo is [Enable], which also makes the old launcher Home again.
+ */
+enum class Action { Stop, Disable, Enable, Open, Uninstall, Change, ClearCaches, Home }
 
 data class HistoryEntry(
     val id: Long,
@@ -126,4 +137,16 @@ data class HistoryEntry(
     /** What the undo button runs; null when there is nothing to undo. */
     val undo: Action?,
     val undoneAt: Long?,
+    /** For [Action.Change]: the settings as they were before, null for a key that wasn't set. */
+    val previous: Map<String, String?>? = null,
+)
+
+/** The TV-wide settings shown on its page; null for one the TV doesn't report. */
+data class TvTweaks(
+    /** The Private DNS provider, when one is set and in use; null means Automatic or Off. */
+    val dnsHost: String?,
+    /** Window animation scale, e.g. "1.0"; null when unset (Android's 1×). */
+    val animationScale: String?,
+    /** Private DNS came in Android 9: older TVs accept the setting and ignore it. */
+    val dnsSupported: Boolean = true,
 )

@@ -12,6 +12,20 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-23
+
+- **New:** Uninstall apps you installed yourself; apps that came with the TV can only be disabled. [#33](../../pull/33)
+- **Improved:** Apps that can't be changed fold into their own section below the list. [#33](../../pull/33)
+- **Fixed:** App icons that failed to load once now come back, with a fallback to the banner. [#34](../../pull/34)
+- **New:** Block ads on the whole TV with Private DNS, AdGuard by default. [#35](../../pull/35)
+- **New:** Faster animations: menus move at twice the speed. [#35](../../pull/35)
+- **New:** Clear every app's cache in one tap; app data stays. [#35](../../pull/35)
+- **New:** Save a screenshot of the TV to your phone. [#35](../../pull/35)
+- **New:** Allow or deny another device's connection request from your phone. [#36](../../pull/36)
+- **New:** Set another launcher, like Projectivy, as default; Undo restores yours. [#37](../../pull/37)
+- **New:** Use your own fork of the debloat lists, set in Settings. [#40](../../pull/40)
+- **New:** Hear when a new version is out; turn it off in Settings. [#43](../../pull/43)
+
 ## 0.1.0 — 2026-10-23
 
 - **New:** A new app icon: a telescope with a TV screen for a lens. [#28](../../pull/28)

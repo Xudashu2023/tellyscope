@@ -8,12 +8,15 @@ import android.net.NetworkCapabilities
 import app.tellyscope.adb.ActionResult
 import app.tellyscope.adb.ApkInfo
 import app.tellyscope.adb.Files
+import app.tellyscope.adb.HomeResult
 import app.tellyscope.adb.InstallResult
 import app.tellyscope.adb.Progress
 import app.tellyscope.adb.Sideload
 import app.tellyscope.adb.TvFile
 import app.tellyscope.adb.TvFolder
 import app.tellyscope.adb.Actions
+import app.tellyscope.adb.ConnectionPrompt
+import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.Connector
 import app.tellyscope.adb.DeviceLink
 import app.tellyscope.adb.LabelHelper
@@ -25,6 +28,8 @@ import app.tellyscope.adb.ProtectedReason
 import app.tellyscope.adb.Remote
 import app.tellyscope.adb.RemoteKey
 import app.tellyscope.adb.PairResult
+import app.tellyscope.adb.Tweak
+import app.tellyscope.adb.Tweaks
 import com.flyfishxu.kadb.mdns.KadbMdnsAndroid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -248,8 +253,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun apps(deviceId: String): List<AppInfo> {
         val shell = session(deviceId)
         val home = Actions(shell).homePackages()
+        val homeOptions = Actions(shell).homeOptions()
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
         val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
+        val userInstalled = Parsers.packages(shell.shell("pm list packages -3").output).map { it.name }.toSet()
         // Older pm rejects --show-versioncode and prints no packages; list again without it.
         val listed = Parsers.packages(shell.shell("pm list packages --show-versioncode").output)
             .ifEmpty { Parsers.packages(shell.shell("pm list packages").output) }
@@ -277,6 +284,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 ),
                 version = "",
                 icon = name.icon,
+                removable = p.name in userInstalled && p.name !in keep,
+                homeInstead = homeOptions?.takeIf { p.name in it.others && it.current !in keep }?.current,
             )
         }.sortedBy { it.label.lowercase() }
     }
@@ -322,24 +331,53 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val key = key(deviceId)
         if (!book.hasBaseline(key)) book.setBaseline(key, disabledPackages(deviceId))
         // The list's keep entries add to the built-in protection in Actions.run; look it up if not yet.
-        if (action == Action.Stop || action == Action.Disable) {
+        if (action == Action.Stop || action == Action.Disable || action == Action.Uninstall) {
             if (keepRefuses(action, packageName, keep[key] ?: resolve(deviceId).list?.keep.orEmpty())) {
                 throw IllegalStateException(KEEP_REASON)
             }
         }
+        if (action == Action.Home) return makeHome(deviceId, packageName, undoing)
         val r = Actions(shell).run(AdbAction.valueOf(action.name.uppercase()), packageName)
         return when (r) {
-            is ActionResult.Done -> book.record(
-                deviceId = key,
-                at = System.currentTimeMillis(),
-                action = action,
-                packageName = packageName,
-                label = labels[packageName] ?: AppNames.fallback(packageName),
-                undo = r.undo?.let { Action.valueOf(it.name.lowercase().replaceFirstChar(Char::uppercase)) },
-                undoing = undoing,
-            )
+            is ActionResult.Done -> {
+                // Undoing a home switch: the old launcher is on again, now make it Home again too.
+                val switch = undoing?.let { id -> book.entries(key).firstOrNull { it.id == id && it.action == Action.Home } }
+                val back = switch?.previous?.get("from")?.let { Actions(shell).setHome(it) }
+                book.record(
+                    deviceId = key,
+                    at = System.currentTimeMillis(),
+                    action = action,
+                    packageName = packageName,
+                    label = labels[packageName] ?: AppNames.fallback(packageName),
+                    // Disabling the home screen is refused anyway; offer no undo that can't work.
+                    undo = if (switch != null) null else r.undo?.let { Action.valueOf(it.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                    undoing = undoing,
+                ).also { if (back == false) throw IllegalStateException(homeNotBack(it.label)) }
+            }
             is ActionResult.Refused -> throw IllegalStateException(reasonText(r.reason))
             is ActionResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+        }
+    }
+
+    private suspend fun makeHome(deviceId: String, packageName: String, undoing: Long?): HistoryEntry {
+        val key = key(deviceId)
+        val old = Actions(session(deviceId)).homeOptions()?.current
+        if (old != null && keepRefuses(Action.Disable, old, keep[key] ?: resolve(deviceId).list?.keep.orEmpty())) {
+            throw IllegalStateException(KEEP_REASON)
+        }
+        return when (val r = Actions(session(deviceId)).makeHome(packageName)) {
+            is HomeResult.Switched -> book.record(
+                deviceId = key,
+                at = System.currentTimeMillis(),
+                action = Action.Home,
+                packageName = r.from.substringBefore('/'),
+                label = labels[packageName] ?: AppNames.fallback(packageName),
+                undo = Action.Enable,
+                undoing = undoing,
+                previous = mapOf("from" to r.from, "to" to r.to),
+            )
+            is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
+            is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
         }
     }
 
@@ -374,6 +412,17 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         keep.remove(key)
     }
 
+    override suspend fun listSource(): String? = lists.custom()
+
+    override suspend fun setListSource(url: String?) {
+        when (lists.setSource(url)) {
+            SourceResult.Ok -> keep.clear() // the old source's keep entries
+            SourceResult.NotHttps -> throw IllegalStateException("the address has to start with https://")
+            SourceResult.Unreachable -> throw IllegalStateException("couldn't reach that address. Check it and the phone's internet")
+            SourceResult.NotAList -> throw IllegalStateException(NOT_A_LIST)
+        }
+    }
+
     private class Resolved(val index: ListIndex?, val entry: ListEntry?, val list: DeviceList?, val sdk: Int?)
 
     /** This TV's list (picked, else matched), with its keep entries recorded for [apps] and [act]. */
@@ -395,6 +444,51 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun type(deviceId: String, text: String) = Remote(session(deviceId)).type(text)
 
     override suspend fun reboot(deviceId: String) = Remote(session(deviceId)).reboot()
+
+    override suspend fun tweaks(deviceId: String): TvTweaks {
+        val t = Tweaks(session(deviceId))
+        return TvSettings.tweaks(t.read(Tweak.PRIVATE_DNS), t.read(Tweak.ANIMATIONS), sdk(deviceId))
+    }
+
+    private suspend fun sdk(deviceId: String) = session(deviceId).shell("getprop ro.build.version.sdk").output.trim().toIntOrNull()
+
+    override suspend fun change(deviceId: String, tweak: Tweak, values: Map<String, String?>, undoing: Long?): HistoryEntry {
+        val t = Tweaks(session(deviceId))
+        val strictDns = tweak == Tweak.PRIVATE_DNS && values["private_dns_mode"] == "hostname"
+        if (strictDns && (sdk(deviceId) ?: TvSettings.DNS_SDK) < TvSettings.DNS_SDK) throw IllegalStateException(TvSettings.DNS_TOO_OLD)
+        // Only the keys being written: Undo must not touch the ones this change left alone.
+        val before = t.read(tweak).filterKeys { it in values }
+        if (!t.write(tweak, values)) throw IllegalStateException("the TV didn't accept the change")
+        // Strict Private DNS fails closed: a provider the network can't reach takes the TV
+        // offline. Put it back on the spot; ADB stays up, it's the LAN by address.
+        if (strictDns && !t.resolves()) {
+            t.write(tweak, before)
+            throw IllegalStateException(TvSettings.dnsUnreachable(values["private_dns_specifier"]))
+        }
+        return book.record(
+            deviceId = key(deviceId),
+            at = System.currentTimeMillis(),
+            action = Action.Change,
+            packageName = tweak.name,
+            label = TvSettings.label(tweak, t.read(tweak)),
+            undo = Action.Change,
+            undoing = undoing,
+            previous = before,
+        )
+    }
+
+    override suspend fun clearCaches(deviceId: String): Long? {
+        val freed = Tweaks(session(deviceId)).clearCaches()
+        book.record(key(deviceId), System.currentTimeMillis(), Action.ClearCaches, "", TvSettings.CACHES, undo = null)
+        return freed
+    }
+
+    override suspend fun screenshot(deviceId: String, sink: Sink) = Tweaks(session(deviceId)).screenshot(sink)
+
+    override suspend fun connectionRequest(deviceId: String) = ConnectionPrompt(session(deviceId)).pending()
+
+    override suspend fun answerRequest(deviceId: String, request: ConnectionRequest, allow: Boolean, always: Boolean) =
+        ConnectionPrompt(session(deviceId)).answer(request, allow, always)
 
     /**
      * The history key for a TV, read from it once connected and saved with it. Until it has
@@ -477,6 +571,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         else -> "closing"
     }
 
+    private fun homeNotBack(app: String) =
+        "turned $app back on, but the TV kept the other home screen. Press Home on the remote to pick $app"
+
     /** Copy from the protected-apps table in the UX copy doc. */
     private fun reasonText(r: ProtectedReason) = when (r) {
         ProtectedReason.HOME_SCREEN -> "this is your home screen"
@@ -488,5 +585,6 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         ProtectedReason.SETUP_WIZARD -> "the TV may get stuck on restart without it"
         ProtectedReason.UPDATES -> "the TV gets its updates through this"
         ProtectedReason.UNKNOWN_HOME -> "this TV didn't say which app is its home screen, so Tellyscope won't change anything"
+        ProtectedReason.CAME_WITH_TV -> "it came with the TV, so it can only be disabled"
     }
 }

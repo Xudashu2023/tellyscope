@@ -32,12 +32,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -94,6 +96,7 @@ import app.tellyscope.ui.theme.SmallNumber
 data class DeviceActions(
     val select: (String) -> Unit = {},
     val addDevice: () -> Unit = {},
+    val settings: () -> Unit = {},
     val showOffline: (Boolean) -> Unit = {},
     val query: (String) -> Unit = {},
     val propose: (String, Action) -> Unit = { _, _ -> },
@@ -121,6 +124,16 @@ data class DeviceActions(
     val debloat: () -> Unit = {},
     /** Opens the Advanced screen: every number, per-app CPU and RAM, processes and network. */
     val advanced: () -> Unit = {},
+    /** Ad-blocking Private DNS through the given hostname; null goes back to Automatic. */
+    val setDns: (String?) -> Unit = {},
+    val setFastAnimations: (Boolean) -> Unit = {},
+    val clearCaches: () -> Unit = {},
+    /** Asks where to save a screenshot of the TV on the phone, then takes it. */
+    val screenshot: () -> Unit = {},
+    /** Allow or Deny on another device's debugging prompt, and whether to always allow it. */
+    val answerRequest: (allow: Boolean, always: Boolean) -> Unit = { _, _ -> },
+    /** Hides that prompt on the phone without answering it; the TV keeps asking. */
+    val dismissRequest: () -> Unit = {},
 )
 
 /** Off while the remote is made faster: the device page hides its Remote button. */
@@ -219,28 +232,44 @@ fun DeviceScreen(
                 }
             }
             // An offline TV can't list anything: sections with nothing in them stay out of the way.
+            // Protected apps can't be changed, so they wait in their own folded section below.
+            val (locked, changeable) = ui.apps
+                .filter { q.isEmpty() || it.label.lowercase().contains(q) || it.packageName.contains(q) }
+                .sortedWith(compareBy({ !it.enabled }, { it.system }, { it.label }))
+                .partition { it.protectedReason != null }
             if (!offline || ui.apps.isNotEmpty()) section(
                 key = "apps",
                 title = "Apps",
-                count = ui.apps.size,
+                count = ui.apps.count { it.protectedReason == null },
                 expandedByDefault = true,
                 forceOpen = q.isNotEmpty(),
             ) {
-                val apps = ui.apps
-                    .filter { q.isEmpty() || it.label.lowercase().contains(q) || it.packageName.contains(q) }
-                    .sortedWith(compareBy({ it.protectedReason != null }, { !it.enabled }, { it.system }, { it.label }))
-                if (apps.isEmpty()) EmptyLine(q)
-                apps.forEach { app ->
-                    AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions)
+                if (changeable.isEmpty()) EmptyLine(q)
+                changeable.forEach { app ->
+                    AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions, homeLabel(ui.apps, app))
+                }
+            }
+            if (ui.apps.any { it.protectedReason != null } && (q.isEmpty() || locked.isNotEmpty())) section(
+                key = "protected",
+                title = Copy.CANT_CHANGE,
+                count = ui.apps.count { it.protectedReason != null },
+                forceOpen = q.isNotEmpty(),
+            ) {
+                locked.forEach { app ->
+                    AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions, homeLabel(ui.apps, app))
                 }
             }
             if (!offline && q.isEmpty()) section("files", "Files on the TV", ui.files.list?.size ?: 0) {
                 FilesBlock(ui.files, state.now, actions)
             }
+            if (!offline && q.isEmpty()) section("tweaks", Copy.TWEAKS, 0) {
+                TweaksBlock(ui, actions)
+            }
             section("history", "History", ui.history.size) {
                 HistoryList(ui.history, state.now, actions.undo, restoring = ui.busy == RESTORING, onRestoreAll = actions.restoreAll)
             }
         }
+        if (!offline) ui.request?.let { RequestDialog(it, ui.busy == ANSWERING, actions.answerRequest, actions.dismissRequest) }
         ui.sideload?.let { SideloadDialog(it, actions) }
         ui.transfer?.let { TransferDialog(it, actions.cancelTransfer) }
     }
@@ -419,6 +448,11 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
                 text = { Text("Forget this TV") },
                 leadingIcon = { Icon(Icons.Default.Delete, null) },
                 onClick = { open = false; forgetting = true },
+            )
+            DropdownMenuItem(
+                text = { Text("Settings") },
+                leadingIcon = { Icon(Icons.Default.Settings, null) },
+                onClick = { open = false; actions.settings() },
             )
             DropdownMenuItem(
                 text = { Text("About & licences") },
@@ -667,6 +701,27 @@ fun AppIcon(app: AppInfo, modifier: Modifier = Modifier) {
     }
 }
 
+/** The name of the home screen [app] would replace, or null when it isn't offered as one. */
+private fun homeLabel(apps: List<AppInfo>, app: AppInfo): String? =
+    app.homeInstead?.let { pkg -> apps.firstOrNull { it.packageName == pkg }?.label }
+
+/** Uninstall has no undo, so it asks in a dialog that names the app, not inline. */
+@Composable
+fun UninstallDialog(app: AppInfo, onUninstall: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(Copy.uninstallTitle(app.label)) },
+        text = { Text(Copy.explain(Action.Uninstall, app.label, app.packageName)) },
+        confirmButton = {
+            Button(
+                onClick = onUninstall,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+            ) { Text(Copy.confirm(Action.Uninstall)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AppRow(
@@ -675,15 +730,20 @@ private fun AppRow(
     pending: Pair<String, Action>?,
     busy: Boolean,
     actions: DeviceActions,
+    /** The current home screen's name, when this app can replace it. */
+    homeLabel: String? = null,
 ) {
     var open by rememberSaveable(app.packageName) { mutableStateOf(false) }
+    // A launcher can be protected by its name and still be offered as the new home screen.
+    val home = app.homeInstead?.takeIf { app.enabled && homeLabel != null }
+    val changeable = app.protectedReason == null || home != null
     val ram = procs.filter { it.packageName == app.packageName }.sumOf { it.ramMb }
     val status = when {
         !app.enabled -> "Disabled"
         ram > 0 -> "Running"
         else -> "Not running"
     }
-    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(enabled = app.protectedReason == null) { open = !open }.padding(vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(enabled = changeable) { open = !open }.padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppIcon(app, Modifier.alpha(if (app.enabled) 1f else 0.4f))
             Spacer(Modifier.width(12.dp))
@@ -701,18 +761,26 @@ private fun AppRow(
             if (busy) androidx.compose.material3.LoadingIndicator(Modifier.size(32.dp))
         }
         val proposed = pending?.takeIf { it.first == app.packageName }?.second
-        AnimatedVisibility((open || proposed != null) && app.protectedReason == null) {
+        AnimatedVisibility((open || proposed != null) && changeable) {
             Column(Modifier.padding(start = 52.dp, top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // The label is whatever the app calls itself; the package id is what an action touches.
                 Text(app.packageName, style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (proposed == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (app.protectedReason == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (app.enabled && ram > 0) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Stop) }) { Text(Copy.button(Action.Stop)) }
                         if (app.enabled) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Disable) }) { Text(Copy.button(Action.Disable)) }
                         else FilledTonalButton(onClick = { actions.propose(app.packageName, Action.Enable) }) { Text(Copy.button(Action.Enable)) }
+                        if (app.removable) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Uninstall) }) { Text(Copy.button(Action.Uninstall)) }
                     }
+                    if (home != null) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Home) }) { Text(Copy.MAKE_HOME) }
+                } else if (proposed == Action.Uninstall) {
+                    UninstallDialog(app, onUninstall = actions.confirm, onDismiss = actions.cancel)
                 } else {
-                    Text(Copy.explain(proposed, app.label, app.packageName), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (proposed == Action.Home && home != null) Copy.explainHome(app.label, app.packageName, homeLabel!!, home)
+                        else Copy.explain(proposed, app.label, app.packageName),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = actions.confirm) { Text(Copy.confirm(proposed)) }
                         TextButton(onClick = actions.cancel) { Text("Cancel") }

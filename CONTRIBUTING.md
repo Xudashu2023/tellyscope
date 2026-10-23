@@ -4,7 +4,7 @@ Thanks for helping! Tellyscope is young, so the code and its structure are still
 
 ## Ground rules
 
-- **Read the [safety rules](README.md#safety-rules) first.** A pull request that uninstalls packages, bypasses the protected list or skips recording what was already off won't be merged.
+- **Read the [safety rules](README.md#safety-rules) first.** A pull request that uninstalls apps that came with the TV, bypasses the protected list or skips recording what was already off won't be merged.
 - **Open pull requests against `dev`.** `main` is the release branch and only takes `dev`.
 - **One change per pull request.** Smaller is easier to review.
 - **`./gradlew build` must pass** before you open a PR. CI runs the same command.
@@ -24,6 +24,10 @@ The per-TV lists behind **Suggested for this TV** live in the [tellyscope-device
 - Say which TV models you tested on, and what changed after disabling it.
 - If disabling it broke anything (launcher, updates, remote, input, HDMI-CEC), put it in the list's keep entries, or propose it for the built-in protected list (`adb/src/main/kotlin/app/tellyscope/adb/Protected.kt`) here.
 
+### Using your own lists
+
+You don't have to trust ours. Fork tellyscope-devices, edit the lists in your fork, and keep `index.json` on schema 1 with each file's sha256 updated. Then in the app open **Settings** (in the TV menu at the top), tap **Change** under **Debloat lists**, and paste the raw address of the folder that holds `index.json`, for example `https://raw.githubusercontent.com/<you>/tellyscope-devices/main/`. Only HTTPS is accepted, and a source that doesn't serve a schema 1 index is refused without changing anything. Switching drops the cached lists. While your source is in use, the review step says where the list came from. The built-in protected list still wins over any list, and **Reset to default** goes back to tellyscope-devices.
+
 ## README screenshots
 
 They come from the screenshot tests, so they always show the current UI with sample data. To refresh them, render the tests, then put them in phone frames (needs Python 3 with Pillow):
@@ -33,7 +37,7 @@ They come from the screenshot tests, so they always show the current UI with sam
 python3 docs/screenshots/frame.py
 ```
 
-`frame.py` lists which test image becomes which README image. Keep the README at 8 images or fewer.
+`frame.py` lists which test image becomes which README image. Keep the README at 12 images or fewer.
 
 ## Style
 

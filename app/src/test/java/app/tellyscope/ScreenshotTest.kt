@@ -16,9 +16,12 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import app.tellyscope.adb.ApkInfo
+import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.InstallRefusal
 import app.tellyscope.adb.InstalledVersion
 import app.tellyscope.adb.Progress
@@ -31,6 +34,8 @@ import app.tellyscope.data.Device
 import app.tellyscope.data.DeviceState
 import app.tellyscope.data.FakeDeviceSource
 import app.tellyscope.data.HistoryEntry
+import app.tellyscope.data.TvSettings
+import app.tellyscope.data.TvTweaks
 import app.tellyscope.data.ListEntry
 import app.tellyscope.data.PickedApp
 import app.tellyscope.data.ScanHit
@@ -44,6 +49,7 @@ import app.tellyscope.ui.DebloatScreen
 import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceScreen
 import app.tellyscope.ui.Copy
+import app.tellyscope.ui.TweaksBlock
 import app.tellyscope.ui.DeviceUi
 import app.tellyscope.ui.DisableDialog
 import app.tellyscope.ui.ForgetDialog
@@ -258,6 +264,40 @@ class ScreenshotTest {
         assertEquals(listOf(turnedOn), undone)
     }
 
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun apps_uninstallOnlyForUserApps() {
+        val proposed = mutableListOf<Pair<String, Action>>()
+        val tap = { label: String ->
+            compose.onNodeWithText(label).performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+        }
+        shot("26_apps_uninstall_offered", screen = true, before = { tap("Netflix"); tap("XGIMI Assistant"); Unit }) {
+            DeviceScreen(deviceState(), DeviceActions(propose = { pkg, a -> proposed += pkg to a }))
+        }
+        // Netflix was installed by the user; XGIMI Assistant came with the TV and only gets Disable.
+        compose.onAllNodesWithText("Uninstall").assertCountEquals(1)
+        compose.onNodeWithText("Uninstall").performClick()
+        assertEquals(listOf("com.netflix.ninja" to Action.Uninstall), proposed)
+    }
+
+    @Test fun apps_uninstallAsksInADialog() {
+        val state = deviceState { copy(pending = "com.netflix.ninja" to Action.Uninstall) }
+        shot("27_apps_uninstall_confirm", screen = true) { DeviceScreen(state, DeviceActions()) }
+        compose.onNodeWithText("Uninstall Netflix?").assertExists()
+        compose.onNodeWithText("can't be undone", substring = true).assertExists()
+        compose.onNodeWithText("Yes, uninstall it").assertExists()
+    }
+
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun apps_protectedAreFoldedAway() {
+        shot("28_apps_protected_folded", screen = true) { DeviceScreen(deviceState(), DeviceActions()) }
+        compose.onNodeWithText("Can't be changed").assertExists()
+        compose.onNodeWithText("System UI").assertDoesNotExist()
+        compose.onNodeWithText("Can't be changed").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("System UI").assertExists()
+    }
+
     /** A real TV's app list: no per-process stats yet, so the apps sit right under the stat grid. */
     private fun appsState(apps: List<AppInfo>): UiState {
         val base = deviceState()
@@ -358,6 +398,37 @@ class ScreenshotTest {
     @Test fun device_files() = shot("09_device_files") {
         val files = runBlocking { fake.files(xgimi.ip, TvFolder.DOWNLOAD) }
         Surface { Column(Modifier.padding(16.dp)) { FilesBlock(FilesUi(TvFolder.DOWNLOAD, files), now, DeviceActions()) } }
+    }
+
+    @Test fun device_tweaks() = shot("16_device_tweaks") {
+        val ui = DeviceUi(tweaks = TvTweaks(dnsHost = TvSettings.ADGUARD, animationScale = null))
+        Surface { Column(Modifier.padding(16.dp)) { TweaksBlock(ui, DeviceActions()) } }
+    }
+
+    @Test fun device_tweaksDns() = shot("16_device_tweaks_dns", screen = true, before = {
+        compose.onNodeWithText(Copy.DNS_TITLE).performClick()
+        Unit
+    }) {
+        Surface { Column(Modifier.padding(16.dp)) { TweaksBlock(DeviceUi(tweaks = TvTweaks(null, null)), DeviceActions()) } }
+    }
+
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun device_tweaksInHistory() {
+        val history = listOf(
+            HistoryEntry(3, xgimi.ip, now - 20_000, Action.ClearCaches, "", TvSettings.CACHES, null, null),
+            HistoryEntry(2, xgimi.ip, now - 60_000, Action.Change, "ANIMATIONS", "Animations at 0.5×", Action.Change, null, mapOf("window_animation_scale" to null)),
+            HistoryEntry(1, xgimi.ip, now - 90_000, Action.Change, "PRIVATE_DNS", "Private DNS set to ${TvSettings.ADGUARD}", Action.Change, null, mapOf("private_dns_mode" to "opportunistic")),
+        )
+        shot("16_device_tweaks_history", before = {
+            compose.onNodeWithText("Apps").performClick()
+            compose.onNodeWithText("History").performClick()
+            Unit
+        }) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
+    }
+
+    @Test fun device_connectionRequest() = shot("17_device_request", screen = true) {
+        val request = ConnectionRequest("AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89")
+        DeviceScreen(deviceState { copy(request = request) }, DeviceActions())
     }
 
     private val dir = Files.createTempDirectory("shots").toFile()
@@ -575,6 +646,33 @@ class ScreenshotTest {
         }
         shot("24_readme_files", before = openFiles) { DeviceScreen(deviceState { copy(files = FilesUi(TvFolder.DOWNLOAD, files)) }, DeviceActions()) }
         compose.onNodeWithText("wallpaper-mountains.jpg").assertExists()
+    }
+
+    // Tall, like readme_history: frame.py scrolls it down to TV tweaks.
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun readme_tweaks() {
+        val openTweaks = {
+            compose.onNodeWithText("Apps").performClick() // fold the long list away
+            compose.onNodeWithText(Copy.TWEAKS).performClick()
+            Unit
+        }
+        val tweaks = TvTweaks(dnsHost = TvSettings.ADGUARD, animationScale = null)
+        shot("29_readme_tweaks", before = openTweaks) { DeviceScreen(deviceState { copy(tweaks = tweaks) }, DeviceActions()) }
+        compose.onNodeWithText(Copy.dnsState(TvSettings.ADGUARD)).assertExists()
+    }
+
+    // Tall, like readme_history: frame.py scrolls it down to the confirm.
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun readme_home() {
+        // Google TV's own launcher is Home; Projectivy, installed by the user, offers to replace it.
+        val stock = AppInfo("com.google.android.tvlauncher", "Google TV Home", 0xFF1A73E8, true, true, "this is your home screen", "1.0.4")
+        val state = deviceState {
+            val projectivy = { a: AppInfo -> a.copy(protectedReason = null, system = false, removable = true, homeInstead = stock.packageName) }
+            copy(apps = listOf(stock) + apps.map { if (it.packageName == "com.spocky.projengmenu") projectivy(it) else it }, pending = "com.spocky.projengmenu" to Action.Home)
+        }
+        val foldSuggested = { compose.onNodeWithText("Suggested for this TV").performClick(); Unit }
+        shot("30_readme_home", before = foldSuggested) { DeviceScreen(state, DeviceActions()) }
+        compose.onNodeWithText("Yes, switch home screen").assertExists()
     }
 
     @Test fun readme_send() = shot("25_readme_send", screen = true) {
