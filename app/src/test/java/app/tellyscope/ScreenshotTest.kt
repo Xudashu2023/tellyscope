@@ -175,10 +175,13 @@ class ScreenshotTest {
     /** The fake's list, among a few other models so "Which TV is this?" has a choice. */
     private suspend fun lists(id: String): Suggestions.Ready {
         val ready = fake.suggestions(id) as Suggestions.Ready
-        val others = listOf("Sony Bravia (Google TV)", "TCL C-series", "Xiaomi Mi Box S").map {
-            val slug = it.lowercase().replace(Regex("[^a-z]+"), "-").trim('-')
+        val others = listOf(
+            "XGIMI MoGo 2 projector", "XGIMI MoGo 3 Pro projector", "Philips 55OLED708",
+            "Sony Bravia (Google TV)", "TCL C-series", "Xiaomi Mi Box S",
+        ).map {
+            val slug = it.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
             ListEntry(slug, it, null, 30, "devices/$slug.json", "0".repeat(64))
-        }
+        } + ListEntry("google-chromecast-gtv-4k", "Chromecast with Google TV 4K", null, 34, "devices/google-chromecast-gtv-4k.json", "0".repeat(64))
         return ready.copy(devices = ready.devices + others)
     }
 
@@ -514,14 +517,46 @@ class ScreenshotTest {
 
     @Test fun debloat_pick() {
         val lists = deviceState().device.lists
-        shot("18_debloat_pick") { DebloatScreen(lists, {}, {}, {}) }
-        compose.onNodeWithText("Next").assertIsEnabled() // the matched list is already chosen
+        shot("18_debloat_pick") { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("XGIMI")) }
+        // The match on its own, already chosen, with a way to change it; no list of every model.
+        compose.onNodeWithText("Next").assertIsEnabled()
+        compose.onNodeWithText("Change").assertExists()
+        compose.onNodeWithText("TCL C-series").assertDoesNotExist()
+    }
+
+    @Test fun debloat_pick_change() {
+        val lists = deviceState().device.lists
+        val change = { compose.onNodeWithText("Change").performClick(); Unit }
+        shot("18_debloat_pick_change", before = change) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("XGIMI")) }
+        // The search starts at the TV's maker, and the match stays chosen.
+        compose.onNodeWithText("XGIMI MoGo 2 projector").assertExists()
+        compose.onNodeWithText("TCL C-series").assertDoesNotExist()
+        compose.onNodeWithText("Next").assertIsEnabled()
+    }
+
+    @Test fun debloat_pick_brand() {
+        // Philips TVs report their factory, TPV, as manufacturer; the brand finds the list.
+        val ready = deviceState().device.lists as Suggestions.Ready
+        shot("18_debloat_pick_brand") { DebloatScreen(Suggestions.Pick(null, ready.devices), {}, {}, {}, tvMakers = listOf("Philips", "TPV")) }
+        compose.onNodeWithText("Philips 55OLED708").assertExists()
+        compose.onNodeWithText("No list for", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Next").assertIsNotEnabled() // found, but not picked for them
     }
 
     @Test fun debloat_unknownModel() {
+        // A maker no list names: the full list, with a line saying so, and nothing guessed.
         val ready = deviceState().device.lists as Suggestions.Ready
-        shot("18_debloat_pick_unknown") { DebloatScreen(Suggestions.Pick(null, ready.devices), {}, {}, {}) }
-        compose.onNodeWithText("Next").assertIsNotEnabled() // nothing guessed for a model it doesn't know
+        shot("18_debloat_pick_unknown") { DebloatScreen(Suggestions.Pick(null, ready.devices), {}, {}, {}, tvMakers = listOf("TPV")) }
+        compose.onNodeWithText("No list for \u201cTPV\u201d", substring = true).assertExists()
+        compose.onNodeWithText("Chromecast with Google TV 4K").assertExists()
+        compose.onNodeWithText("Next").assertIsNotEnabled()
+    }
+
+    @Test fun debloat_pickByHand() {
+        val ready = deviceState().device.lists as Suggestions.Ready
+        val pick = { compose.onNodeWithText("Philips 55OLED708").performClick(); Unit }
+        shot("18_debloat_pick_manual", before = pick) { DebloatScreen(Suggestions.Pick(null, ready.devices), {}, {}, {}, tvMakers = listOf("TPV")) }
+        compose.onNodeWithText("Next").assertIsEnabled()
     }
 
     @Test fun debloat_review() {

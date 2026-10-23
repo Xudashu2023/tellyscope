@@ -47,6 +47,8 @@ data class Device(
     val lastSeen: Long?,
     /** The name the user gave it; wins over the network name. */
     val nickname: String? = null,
+    /** `ro.product.brand`, which can differ from [manufacturer]. */
+    val brand: String? = null,
 )
 
 sealed interface ConnectResult {

@@ -208,6 +208,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             back = { debloat = false },
             snackbar = snackbar,
             source = state.listSource,
+            tvMakers = listOfNotNull(state.selected?.brand, state.selected?.manufacturer).distinct(),
         )
     } else {
         DeviceScreen(
