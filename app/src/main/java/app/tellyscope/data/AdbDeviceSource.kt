@@ -570,6 +570,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             android = stats?.androidVersion,
             lastSeen = link?.lastSeenMillis ?: saved[id]?.lastSeen,
             nickname = names[keys[id] ?: id],
+            brand = stats?.brand,
         )
     }
 

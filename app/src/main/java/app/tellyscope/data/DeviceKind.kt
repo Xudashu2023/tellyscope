@@ -15,9 +15,13 @@ private val FIRE_TV = Regex("^aft|fire[ -]?tv", RegexOption.IGNORE_CASE)
 private val STICK = Regex("chromecast|stick|streamer|shield", RegexOption.IGNORE_CASE)
 
 /** Projector makers or "projector" in a name, then Amazon, then other sticks and boxes; anything else is a TV. */
-fun deviceKind(d: Device): DeviceKind {
-    val words = listOfNotNull(d.manufacturer, d.hit.maker).flatMap { it.lowercase().split(Regex("[^a-z]+")) }
-    val names = listOfNotNull(d.model, d.hit.hostname)
+fun deviceKind(d: Device): DeviceKind = kindOf(listOfNotNull(d.manufacturer, d.hit.maker), listOfNotNull(d.model, d.hit.hostname))
+
+/** The same guess for a debloat list, from its maker (see [listMakers]) and model name. */
+fun listKind(e: ListEntry, maker: String): DeviceKind = kindOf(listOf(maker), listOf(e.name))
+
+private fun kindOf(makers: List<String>, names: List<String>): DeviceKind {
+    val words = makers.flatMap { it.lowercase().split(Regex("[^a-z]+")) }
     return when {
         words.any { it in PROJECTOR_MAKERS } || names.any { "projector" in it.lowercase() } -> DeviceKind.Projector
         "amazon" in words || names.any { FIRE_TV.containsMatchIn(it) } -> DeviceKind.FireTv

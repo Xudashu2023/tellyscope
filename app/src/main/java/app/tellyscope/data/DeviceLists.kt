@@ -27,6 +27,22 @@ data class ListEntry(
     val sha256: String,
 )
 
+/**
+ * Who makes each list's TV, by id. Lists carry no maker, so it is the name's first word, unless
+ * no list's id starts with that word and the list's own id prefix is a later word in the name:
+ * "Chromecast with Google TV" is Google's, while "Skyworth Coocaa K3" stays Skyworth's.
+ */
+fun listMakers(devices: List<ListEntry>): Map<String, String> {
+    fun key(w: String) = w.lowercase().filter { it.isLetterOrDigit() }
+    val prefixes = devices.map { it.id.substringBefore('-') }.toSet()
+    return devices.associate { e ->
+        val words = e.name.split(' ').filter { it.isNotBlank() }
+        val prefix = e.id.substringBefore('-')
+        val first = words.firstOrNull() ?: prefix
+        e.id to if (key(first) in prefixes) first else words.firstOrNull { key(it) == prefix } ?: first
+    }
+}
+
 data class ListIndex(val commit: String?, val devices: List<ListEntry>)
 
 data class ListPackage(val pkg: String, val note: String?, val optional: Boolean)

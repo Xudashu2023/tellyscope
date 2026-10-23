@@ -21,6 +21,8 @@ data class Stats(
     val temperatureC: Double? = null,
     val model: String? = null,
     val manufacturer: String? = null,
+    /** The name on the box; the manufacturer can be the factory (Philips TVs say TPV). */
+    val brand: String? = null,
     val androidVersion: String? = null,
     val sdk: Int? = null,
     /** Uid → packages, from the slow tier; empty where `pm` can't list uids. */
@@ -126,6 +128,7 @@ class DeviceMonitor(
             temperatureC = Parsers.temperatureC(thermal),
             model = props["ro.product.model"],
             manufacturer = props["ro.product.manufacturer"],
+            brand = props["ro.product.brand"],
             androidVersion = props["ro.build.version.release"],
             sdk = props["ro.build.version.sdk"]?.toIntOrNull(),
             softwareMonth = Parsers.softwareMonth(props),
