@@ -12,6 +12,10 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-24
+
+- **Improved:** Each TV's page has four tabs: Overview, Apps, Files and Tweaks. [#60](../../pull/60)
+
 ## 0.3.0 — 2026-10-24
 
 - **Improved:** Picking your TV: your match on its own, or search by maker. [#49](../../pull/49)
