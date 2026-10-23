@@ -12,7 +12,7 @@ until this file has a section for its version.
 
 ## Unreleased
 
-- **Improved:** Picking your TV: your match on its own, or search by maker. [#PR](../../pull/PR)
+- **Improved:** Picking your TV: your match on its own, or search by maker. [#49](../../pull/49)
 
 ## 0.2.2 — 2026-10-23
 
