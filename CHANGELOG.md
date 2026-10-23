@@ -12,6 +12,10 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.2.1 — 2026-10-23
+
+- **Fixed:** Wireless-debugging TVs ask for the pairing code instead of looping on Allow. [#50](../../pull/50)
+
 ## 0.2.0 — 2026-10-23
 
 - **New:** Uninstall apps you installed yourself; apps that came with the TV can only be disabled. [#33](../../pull/33)
