@@ -1,0 +1,711 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+package app.tellyscope.ui
+
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import app.tellyscope.adb.InstallKind
+import app.tellyscope.adb.InstallResult
+import app.tellyscope.adb.InstalledVersion
+import app.tellyscope.adb.Progress
+import app.tellyscope.adb.Remote
+import app.tellyscope.adb.RemoteKey
+import app.tellyscope.adb.TvFile
+import app.tellyscope.adb.TvFolder
+import app.tellyscope.adb.installKind
+import app.tellyscope.data.Action
+import app.tellyscope.data.AppInfo
+import app.tellyscope.data.ConnectResult
+import app.tellyscope.data.Device
+import app.tellyscope.data.DeviceSource
+import app.tellyscope.data.DeviceState
+import app.tellyscope.data.HistoryEntry
+import app.tellyscope.data.NetworkInfo
+import app.tellyscope.data.NotAnApp
+import app.tellyscope.data.PhoneStorage
+import app.tellyscope.data.PickedApp
+import app.tellyscope.data.ScanEvent
+import app.tellyscope.data.ScanHit
+import app.tellyscope.data.ScanProgress
+import app.tellyscope.data.Snapshot
+import app.tellyscope.data.Suggestions
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** Per-row connect state on the scan screen. */
+sealed interface RowState {
+    data object Found : RowState
+    data class Waiting(val since: Long) : RowState
+    /** [error] is the plain sentence; [detail] is what the TV said, shown under Details. */
+    data class Code(val input: String = "", val busy: Boolean = false, val error: String? = null, val detail: String? = null) : RowState
+    data object NotAllowed : RowState
+}
+
+data class ScanUi(
+    val scanning: Boolean = false,
+    val progress: ScanProgress? = null,
+    /** Not on Wi-Fi or Ethernet, so there was no sweep. */
+    val noLan: Boolean = false,
+    val hits: List<ScanHit> = emptyList(),
+    val rows: Map<String, RowState> = emptyMap(),
+)
+
+data class DeviceUi(
+    val snapshot: Snapshot? = null,
+    val apps: List<AppInfo> = emptyList(),
+    val network: NetworkInfo? = null,
+    val history: List<HistoryEntry> = emptyList(),
+    /** Package whose action row is open, and the action awaiting confirmation. */
+    val pending: Pair<String, Action>? = null,
+    val busy: String? = null,
+    /** The install dialog; null when it's closed. */
+    val sideload: SideloadUi? = null,
+    val files: FilesUi = FilesUi(),
+    /** A file copy in progress; its dialog stays up until it finishes or Cancel is tapped. */
+    val transfer: TransferUi? = null,
+    /** The TV's debloat list; null while it loads. */
+    val lists: Suggestions? = null,
+)
+
+data class SideloadUi(
+    val step: Step = Step.Reading,
+    /** Null while the picked file is still being read. */
+    val app: PickedApp? = null,
+    val installed: InstalledVersion? = null,
+    /** Set only by the user's own tick on the downgrade warning. */
+    val allowDowngrade: Boolean = false,
+    val progress: Progress? = null,
+    val error: String? = null,
+    /** The TV's own words for a refusal, shown small under the explanation. */
+    val detail: String? = null,
+) {
+    enum class Step { Reading, Ready, Installing, Installed, Failed }
+
+    val kind: InstallKind? get() = app?.let { installKind(it.info, installed) }
+}
+
+data class FilesUi(
+    val folder: TvFolder = TvFolder.DOWNLOAD,
+    /** Null while loading. */
+    val list: List<TvFile>? = null,
+    val error: String? = null,
+)
+
+data class TransferUi(val name: String, val toTv: Boolean, val folder: TvFolder, val progress: Progress? = null)
+
+data class UiState(
+    val scan: ScanUi = ScanUi(),
+    val devices: List<Device> = emptyList(),
+    val selectedId: String? = null,
+    val showOffline: Boolean = false,
+    val device: DeviceUi = DeviceUi(),
+    val query: String = "",
+    val now: Long = System.currentTimeMillis(),
+    /** TVs asked to restart, by id. */
+    val restarting: Map<String, Restart> = emptyMap(),
+) {
+    val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
+}
+
+/** An action that went through on [deviceId]; the snackbar offers its undo. */
+data class Done(val deviceId: String, val entry: HistoryEntry)
+
+/** A restart in progress: [down] once the TV has dropped, so its coming back can be told apart from not having left. */
+data class Restart(val since: Long, val down: Boolean = false)
+
+/** [DeviceUi.busy] value while "Restore everything" runs. */
+const val RESTORING = "restore"
+
+/** [DeviceUi.busy] value while the ticked suggestions are being disabled. */
+const val DISABLING = "lists"
+
+class TellyscopeViewModel(
+    private val source: DeviceSource,
+    private val storage: PhoneStorage? = null,
+    private val allowTimeoutMs: Long = 60_000,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : ViewModel() {
+
+    private val _state = MutableStateFlow(UiState(now = clock()))
+    val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** One-shot "done, undo?" messages for the snackbar, with the TV they happened on. */
+    private val _done = MutableStateFlow<Done?>(null)
+    val done: StateFlow<Done?> = _done.asStateFlow()
+
+    /** One-shot snackbar lines: the TV refused, went away mid-action, or a restore or copy finished. */
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    /** Last stats per TV, so an offline page shows where it stood instead of blanks. Lives as long as the app. */
+    private val lastSnapshot = mutableMapOf<String, Snapshot>()
+
+    /** Keys go out one at a time, in the order pressed. */
+    private val keys = Mutex()
+
+    private var scanJob: Job? = null
+    private var sideloadJob: Job? = null
+    private var transferJob: Job? = null
+    private var liveJob: Job? = null
+    private var mediumJob: Job? = null
+    private var listsJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            // Remembered TVs open straight to their page (offline until they answer).
+            val known = source.known()
+            _state.update { it.copy(devices = known) }
+            if (_state.value.selectedId == null) known.firstOrNull()?.let { select(it.id) }
+        }
+        viewModelScope.launch {
+            var tick = 0
+            while (true) {
+                delay(1_000)
+                _state.update { it.copy(now = clock()) }
+                if (++tick % 3 == 0) refreshDevices()
+            }
+        }
+        rescan()
+    }
+
+    fun rescan() {
+        if (scanJob?.isActive == true) return
+        scanJob = viewModelScope.launch {
+            _state.update { it.copy(scan = it.scan.copy(scanning = true, noLan = false)) }
+            source.scan().collect { e ->
+                when (e) {
+                    is ScanEvent.Progress -> _state.update { it.copy(scan = it.scan.copy(progress = e.progress)) }
+                    is ScanEvent.Found -> _state.update { s ->
+                        val known = s.devices.any { it.hit.ip == e.hit.ip }
+                        if (known || s.scan.hits.any { it.ip == e.hit.ip }) s
+                        else s.copy(scan = s.scan.copy(
+                            hits = (s.scan.hits + e.hit).sortedWith(compareBy({ it.maker == null }, { ipKey(it.ip) })),
+                            rows = s.scan.rows + (e.hit.ip to RowState.Found),
+                        ))
+                    }
+                    ScanEvent.NoLan -> _state.update { it.copy(scan = it.scan.copy(noLan = true)) }
+                    ScanEvent.Done -> Unit
+                }
+            }
+            _state.update { it.copy(scan = it.scan.copy(scanning = false)) }
+            // Empty scan: the guide is on screen; keep looking so the user never has to press anything.
+            if (_state.value.scan.hits.isEmpty()) {
+                delay(15_000)
+                rescan()
+            }
+        }
+    }
+
+    fun connect(hit: ScanHit) {
+        // Wireless-debugging TVs that already know our key connect straight away;
+        // the rest answer NeedsPairing and get the code field.
+        setRow(hit.ip, RowState.Waiting(clock()))
+        viewModelScope.launch {
+            when (val r = withTimeoutOrNull(allowTimeoutMs) { source.connect(hit) }) {
+                is ConnectResult.Online -> online(r.device)
+                ConnectResult.NeedsPairing -> setRow(hit.ip, RowState.Code())
+                null, ConnectResult.NotAllowed, is ConnectResult.Unreachable, is ConnectResult.WrongCode ->
+                    setRow(hit.ip, RowState.NotAllowed)
+            }
+        }
+    }
+
+    fun codeChanged(hit: ScanHit, input: String) {
+        setRow(hit.ip, RowState.Code(input.filter(Char::isDigit).take(6)))
+    }
+
+    fun pair(hit: ScanHit) {
+        val row = _state.value.scan.rows[hit.ip] as? RowState.Code ?: return
+        setRow(hit.ip, row.copy(busy = true, error = null, detail = null))
+        viewModelScope.launch {
+            when (val r = source.pair(hit, row.input)) {
+                is ConnectResult.Online -> online(r.device)
+                is ConnectResult.WrongCode -> setRow(hit.ip, row.copy(busy = false, error = Copy.WRONG_CODE, detail = r.message))
+                is ConnectResult.Unreachable -> setRow(hit.ip, row.copy(busy = false, error = Copy.UNREACHABLE, detail = r.message))
+                ConnectResult.NotAllowed -> setRow(hit.ip, RowState.NotAllowed)
+                ConnectResult.NeedsPairing -> setRow(hit.ip, row.copy(busy = false, error = "The TV still wants a code. Check the number on screen and try again."))
+            }
+        }
+    }
+
+    /** "Add by IP": `ip` or `ip:port`. Returns an error line, or null when the connect started. */
+    fun addByIp(text: String): String? {
+        val m = Regex("""^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$""").find(text.trim())
+            ?: return "That doesn't look like an IP address. It should look like four numbers with dots, like the one in your TV's network settings."
+        val port = m.groupValues[2].toIntOrNull() ?: 5555
+        if (port !in 1..65535) return "The port after the colon should be a number from 1 to 65535, like 5555."
+        val kind = if (port == 5555) app.tellyscope.data.ScanKind.Classic else app.tellyscope.data.ScanKind.Wireless
+        val hit = ScanHit(m.groupValues[1], port, kind, null, null)
+        _state.update { s ->
+            if (s.scan.hits.any { it.ip == hit.ip }) s
+            else s.copy(scan = s.scan.copy(hits = listOf(hit) + s.scan.hits))
+        }
+        connect(hit)
+        return null
+    }
+
+    private fun online(device: Device) {
+        _state.update { s ->
+            s.copy(
+                devices = s.devices.filterNot { it.id == device.id } + device,
+                scan = s.scan.copy(hits = s.scan.hits.filterNot { it.ip == device.hit.ip }),
+            )
+        }
+        select(device.id)
+    }
+
+    fun select(id: String?) {
+        liveJob?.cancel()
+        mediumJob?.cancel()
+        listsJob?.cancel()
+        _state.update { it.copy(selectedId = id, device = DeviceUi(snapshot = id?.let(lastSnapshot::get)), query = "") }
+        val device = _state.value.selected ?: return
+        // History lives on the phone, so it shows (and undo is offered) even while the TV is off.
+        viewModelScope.launch {
+            val history = source.history(device.id)
+            _state.update { if (it.selectedId == device.id) it.copy(device = it.device.copy(history = history)) else it }
+        }
+        if (device.state != DeviceState.Online) return
+        liveJob = viewModelScope.launch {
+            source.live(id!!).collect { snap ->
+                lastSnapshot[id] = snap
+                _state.update { it.copy(device = it.device.copy(snapshot = snap)) }
+            }
+        }
+        // Its own job: the list download never holds up apps or stats.
+        listsJob = viewModelScope.launch { loadLists(id!!) }
+        mediumJob = viewModelScope.launch {
+            // A TV that drops mid-read throws; the live flow ends and the offline card takes over.
+            try {
+                // Read first: update {} may run its block again, and must never call the TV.
+                val apps = source.apps(id!!)
+                updateDevice(id) { it.copy(apps = apps) }
+                loadFiles()
+                while (true) {
+                    val net = source.network(id!!)
+                    _state.update { it.copy(device = it.device.copy(network = net)) }
+                    delay(10_000)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Nothing to show: the stats stop and the offline card explains.
+            }
+        }
+    }
+
+    /** Remembered TVs reconnect on their own; pick up their state and restart stats when one comes back. */
+    private suspend fun refreshDevices() {
+        val known = source.known()
+        val before = _state.value.selected?.state
+        _state.update { s -> s.copy(devices = known, restarting = restarts(s.restarting, known)) }
+        val now = _state.value.selected ?: return
+        if (now.state == DeviceState.Online && before != DeviceState.Online) select(now.id)
+    }
+
+    /** Reconnect button: a TV stopped at "not allowed" asks again; an offline one restarts its stats. */
+    fun reconnect(id: String) {
+        viewModelScope.launch {
+            source.reconnect(id)
+            refreshDevices()
+            select(id)
+        }
+    }
+
+    fun rename(id: String, name: String?) {
+        viewModelScope.launch {
+            source.rename(id, name)
+            _state.update { it.copy(devices = source.known()) }
+        }
+    }
+
+    fun forget(id: String) {
+        viewModelScope.launch {
+            source.forget(id)
+            val known = source.known()
+            _state.update { it.copy(devices = known) }
+            // Next TV, online ones first; none left means back to the scan screen.
+            select((known.firstOrNull { it.state == DeviceState.Online } ?: known.firstOrNull())?.id)
+        }
+    }
+
+    fun showOffline(show: Boolean) = _state.update { it.copy(showOffline = show) }
+
+    fun query(q: String) = _state.update { it.copy(query = q) }
+
+    /** First tap on an action button: show what it will do. */
+    fun propose(pkg: String, action: Action) =
+        _state.update { it.copy(device = it.device.copy(pending = pkg to action)) }
+
+    fun cancel() = _state.update { it.copy(device = it.device.copy(pending = null)) }
+
+    fun confirm() {
+        val (pkg, action) = _state.value.device.pending ?: return
+        run(pkg, action)
+    }
+
+    /**
+     * Undoes [entry] on the TV it happened on. The snackbar passes [deviceId] because the user may
+     * have switched TVs since; History only lists the selected TV's entries.
+     */
+    fun undo(entry: HistoryEntry, deviceId: String? = _state.value.selectedId) {
+        val undo = entry.undo ?: return
+        run(entry.packageName, undo, undoing = entry.id, id = deviceId)
+    }
+
+    /** Changes [id]'s page only while it is still the one shown; a result for another TV is dropped. */
+    private fun updateDevice(id: String, f: (DeviceUi) -> DeviceUi) =
+        _state.update { s -> if (s.selectedId == id) s.copy(device = f(s.device)) else s }
+
+    private fun run(pkg: String, action: Action, undoing: Long? = null, id: String? = _state.value.selectedId) {
+        if (id == null) return
+        updateDevice(id) { it.copy(pending = null, busy = pkg) }
+        viewModelScope.launch {
+            // The source throws with the user-facing reason when the TV refuses.
+            val (entry, apps) = try {
+                source.act(id, action, pkg, undoing) to source.apps(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Anything else (a dropped socket) still must not crash the app.
+                updateDevice(id) { it.copy(busy = null) }
+                _notice.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
+                return@launch
+            }
+            val history = source.history(id)
+            updateDevice(id) { it.copy(apps = apps, busy = null, history = history) }
+            if (undoing == null) _done.value = Done(id, entry)
+        }
+    }
+
+    /** The user picked one or more files to install. Reads them, then asks the TV what it has. */
+    fun pickedApp(uris: List<Uri>) {
+        val id = _state.value.selectedId ?: return
+        val storage = storage ?: return
+        if (uris.isEmpty()) return
+        setSideload(SideloadUi())
+        sideloadJob = viewModelScope.launch {
+            val ui = try {
+                val app = storage.readApp(uris)
+                SideloadUi(SideloadUi.Step.Ready, app, source.installed(id, app.info.packageName))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: NotAnApp) {
+                SideloadUi(SideloadUi.Step.Failed, error = Copy.NOT_AN_APP)
+            } catch (_: Exception) {
+                SideloadUi(SideloadUi.Step.Failed, error = Copy.SIDELOAD_LOST)
+            }
+            updateDevice(id) { it.copy(sideload = ui) }
+        }
+    }
+
+    fun allowDowngrade(allow: Boolean) = updateSideload { it.copy(allowDowngrade = allow) }
+
+    fun install() {
+        val id = _state.value.selectedId ?: return
+        val ready = _state.value.device.sideload?.takeIf { it.step == SideloadUi.Step.Ready } ?: return
+        val app = ready.app ?: return
+        if (ready.kind == InstallKind.DOWNGRADE && !ready.allowDowngrade) return
+        setSideload(ready.copy(step = SideloadUi.Step.Installing))
+        sideloadJob = viewModelScope.launch {
+            val r = try {
+                source.install(id, app.files, app.info, ready.allowDowngrade) { p -> updateSideload { it.copy(progress = p) } }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return@launch updateDevice(id) { it.copy(sideload = ready.copy(step = SideloadUi.Step.Failed, error = Copy.SIDELOAD_LOST)) }
+            }
+            when (r) {
+                InstallResult.Done -> {
+                    updateDevice(id) { it.copy(sideload = ready.copy(step = SideloadUi.Step.Installed)) }
+                    runCatching { source.apps(id) }.onSuccess { apps -> updateDevice(id) { it.copy(apps = apps) } }
+                }
+                is InstallResult.Refused -> updateDevice(id) {
+                    it.copy(sideload = ready.copy(step = SideloadUi.Step.Failed, error = Copy.installRefused(r.reason, app.label), detail = r.detail))
+                }
+            }
+        }
+    }
+
+    /** Cancel or Done on the install dialog. Not while installing: the dialog has no button then. */
+    fun closeSideload() {
+        if (_state.value.device.sideload?.step == SideloadUi.Step.Installing) return
+        sideloadJob?.cancel()
+        storage?.clearApp()
+        setSideload(null)
+    }
+
+    /** "Open on TV" after a successful install. */
+    fun openInstalled() {
+        val pkg = _state.value.device.sideload?.app?.info?.packageName ?: return
+        closeSideload()
+        run(pkg, Action.Open)
+    }
+
+    fun folder(folder: TvFolder) {
+        _state.update { it.copy(device = it.device.copy(files = FilesUi(folder))) }
+        viewModelScope.launch { loadFiles() }
+    }
+
+    private suspend fun loadFiles() {
+        val id = _state.value.selectedId ?: return
+        val folder = _state.value.device.files.folder
+        val ui = try {
+            FilesUi(folder, source.files(id, folder))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            FilesUi(folder, emptyList(), Copy.FILES_LOST)
+        }
+        _state.update { s -> if (s.device.files.folder == folder) s.copy(device = s.device.copy(files = ui)) else s }
+    }
+
+    /** Copies a phone file into the folder on show. Never overwrites: a taken name gets " (1)". */
+    fun push(uri: Uri) {
+        val id = _state.value.selectedId ?: return
+        val storage = storage ?: return
+        val folder = _state.value.device.files.folder
+        transferJob = viewModelScope.launch {
+            val file = try {
+                storage.open(uri)
+            } catch (_: Exception) {
+                _notice.value = Copy.CANT_READ
+                return@launch
+            }
+            setTransfer(TransferUi(file.name, toTv = true, folder = folder))
+            try {
+                val saved = file.source.use { src ->
+                    source.push(id, folder, file.name, file.size, src) { p -> updateTransfer { it.copy(progress = p) } }
+                }
+                // Close the dialog before the reload: a Cancel tapped now would report a sent file as cancelled.
+                setTransfer(null)
+                _notice.value = Copy.sent(file.name, saved, folder)
+                loadFiles()
+            } catch (e: CancellationException) {
+                _notice.value = Copy.CANCELLED_SEND
+                throw e
+            } catch (_: Exception) {
+                _notice.value = Copy.sendFailed(file.name)
+            } finally {
+                setTransfer(null)
+            }
+        }
+    }
+
+    /** The file whose "save as" picker is open. Kept here so it survives the activity being recreated behind the picker. */
+    private var saving: TvFile? = null
+
+    fun saving(file: TvFile) {
+        saving = file
+    }
+
+    /** The picker's answer: copies the file there, or does nothing if the user backed out. */
+    fun saveTo(uri: Uri?) {
+        val file = saving ?: return
+        saving = null
+        if (uri != null) pull(file, uri)
+    }
+
+    /** A cancelled or failed copy removes the partial file. */
+    private fun pull(file: TvFile, uri: Uri) {
+        val id = _state.value.selectedId ?: return
+        val storage = storage ?: return
+        val folder = _state.value.device.files.folder
+        setTransfer(TransferUi(file.name, toTv = false, folder = folder, progress = Progress(0, file.size)))
+        transferJob = viewModelScope.launch {
+            try {
+                storage.create(uri).use { sink ->
+                    source.pull(id, folder, file, sink) { p -> updateTransfer { it.copy(progress = p) } }
+                }
+                _notice.value = Copy.saved(file.name)
+            } catch (e: CancellationException) {
+                storage.delete(uri)
+                _notice.value = Copy.CANCELLED_SAVE
+                throw e
+            } catch (_: Exception) {
+                storage.delete(uri)
+                _notice.value = Copy.saveFailed(file.name)
+            } finally {
+                setTransfer(null)
+            }
+        }
+    }
+
+    /** Only the dialog's Cancel button calls this. */
+    fun cancelTransfer() {
+        transferJob?.cancel()
+    }
+
+    private fun setSideload(ui: SideloadUi?) = _state.update { it.copy(device = it.device.copy(sideload = ui)) }
+
+    private fun updateSideload(f: (SideloadUi) -> SideloadUi) =
+        _state.update { s -> s.device.sideload?.let { s.copy(device = s.device.copy(sideload = f(it))) } ?: s }
+
+    private fun setTransfer(ui: TransferUi?) = _state.update { it.copy(device = it.device.copy(transfer = ui)) }
+
+    private fun updateTransfer(f: (TransferUi) -> TransferUi) =
+        _state.update { s -> s.device.transfer?.let { s.copy(device = s.device.copy(transfer = f(it))) } ?: s }
+
+    fun doneShown() {
+        _done.value = null
+    }
+
+    fun noticeShown() {
+        _notice.value = null
+    }
+
+    /** Turns back on everything Tellyscope disabled on the selected TV. */
+    fun restoreAll() {
+        val id = _state.value.selectedId ?: return
+        _state.update { it.copy(device = it.device.copy(busy = RESTORING)) }
+        viewModelScope.launch {
+            _notice.value = try {
+                val n = source.restoreAll(id).size
+                if (n == 0) "Nothing to turn back on." else "Turned $n ${if (n == 1) "app" else "apps"} back on."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
+            }
+            val apps = runCatching { source.apps(id) }.getOrNull()
+            val history = source.history(id)
+            updateDevice(id) { it.copy(apps = apps ?: it.apps, busy = null, history = history) }
+        }
+    }
+
+    private suspend fun loadLists(id: String) {
+        val lists = source.suggestions(id)
+        // Once the list is known its keep entries show as protected.
+        val apps = if (lists is Suggestions.Ready) runCatching { source.apps(id) }.getOrNull() else null
+        _state.update { s ->
+            if (s.selectedId != id) s else s.copy(device = s.device.copy(lists = lists, apps = apps ?: s.device.apps))
+        }
+    }
+
+    /** "Pick your TV": remember the choice for this TV and show its list. */
+    fun pickList(listId: String) {
+        val id = _state.value.selectedId ?: return
+        _state.update { it.copy(device = it.device.copy(lists = null)) }
+        listsJob?.cancel()
+        listsJob = viewModelScope.launch {
+            source.pickList(id, listId)
+            loadLists(id)
+        }
+    }
+
+    /** Disables the ticked suggestions one by one, each recorded in History with its own undo. */
+    fun disableSuggested(packages: List<String>) {
+        val id = _state.value.selectedId ?: return
+        _state.update { it.copy(device = it.device.copy(busy = DISABLING)) }
+        viewModelScope.launch {
+            var done = 0
+            for (pkg in packages) {
+                try {
+                    source.act(id, Action.Disable, pkg)
+                    done++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // The TV refused this one or dropped; the count says so.
+                }
+            }
+            _notice.value = Copy.disabledSuggested(done, packages.size)
+            val apps = runCatching { source.apps(id) }.getOrNull()
+            val history = source.history(id)
+            updateDevice(id) { it.copy(apps = apps ?: it.apps, busy = null, history = history) }
+            loadLists(id)
+        }
+    }
+
+    /**
+     * Sends one key and waits for the TV to take it; false when it didn't. The remote screen holds
+     * a D-pad key by calling this in a loop, which stops at the first false, so a lost TV shows once.
+     */
+    suspend fun press(key: RemoteKey): Boolean {
+        val id = _state.value.selectedId ?: return false
+        return keys.withLock {
+            try {
+                source.press(id, key).also { if (!it) _notice.value = Copy.KEY_REFUSED }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _notice.value = Copy.REMOTE_LOST
+                false
+            }
+        }
+    }
+
+    /** Types on the TV. Returns why it can't, or null once it's on its way. */
+    fun type(text: String): String? {
+        if (!Remote.typeable(text)) return Copy.cantType(text)
+        val id = _state.value.selectedId ?: return null
+        viewModelScope.launch {
+            keys.withLock {
+                _notice.value = try {
+                    if (source.type(id, text)) null else Copy.TYPE_REFUSED
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    Copy.REMOTE_LOST
+                }
+            }
+        }
+        return null
+    }
+
+    fun reboot() {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            val ok = try {
+                source.reboot(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _notice.value = Copy.REMOTE_LOST
+                return@launch
+            }
+            if (ok) _state.update { it.copy(restarting = it.restarting + (id to Restart(clock()))) }
+            else _notice.value = Copy.REBOOT_REFUSED
+        }
+    }
+
+    /**
+     * A restart ends when the TV is back online after dropping, or stops at a refusal. One still
+     * online after [RESTART_GRACE_MS] never went down, so the TV ignored the request.
+     */
+    private fun restarts(current: Map<String, Restart>, known: List<Device>): Map<String, Restart> {
+        val now = clock()
+        return current.mapNotNull { (id, r) ->
+            val state = known.firstOrNull { it.id == id }?.state ?: return@mapNotNull null
+            when {
+                state == DeviceState.Online && r.down -> null
+                state == DeviceState.Online && now - r.since > RESTART_GRACE_MS -> {
+                    _notice.value = Copy.REBOOT_IGNORED
+                    null
+                }
+                state == DeviceState.Online -> id to r
+                state == DeviceState.NotAllowed || state == DeviceState.NeedsPairing -> null
+                else -> id to r.copy(down = true)
+            }
+        }.toMap()
+    }
+
+    private fun setRow(ip: String, row: RowState) =
+        _state.update { it.copy(scan = it.scan.copy(rows = it.scan.rows + (ip to row))) }
+
+    private companion object {
+        const val RESTART_GRACE_MS = 60_000L
+    }
+
+    private fun ipKey(ip: String) = ip.split('.').fold(0L) { acc, o -> acc * 256 + (o.toLongOrNull() ?: 0) }
+}
