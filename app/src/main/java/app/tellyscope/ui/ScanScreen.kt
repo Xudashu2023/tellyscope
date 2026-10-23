@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
@@ -37,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -50,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.ScanHit
 import app.tellyscope.data.ScanKind
@@ -67,6 +71,7 @@ fun ScanScreen(
     onPair: (ScanHit) -> Unit,
     onAddByIp: (String) -> String?,
     onBack: (() -> Unit)? = null,
+    onOpenWifi: () -> Unit = {},
 ) {
     var adding by remember { mutableStateOf(false) }
     Scaffold(
@@ -82,7 +87,9 @@ fun ScanScreen(
             )
         },
     ) { pad ->
-        LazyColumn(
+        if (scan.offWifi) {
+            OffWifi(Modifier.padding(pad), onOpenWifi, onAddByIp = { adding = true })
+        } else LazyColumn(
             Modifier.fillMaxSize().padding(pad),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -112,6 +119,34 @@ fun ScanScreen(
         }
     }
     if (adding) AddByIpDialog(subnet = scan.progress?.subnet, onDismiss = { adding = false }, onSubmit = { onAddByIp(it).also { e -> if (e == null) adding = false } })
+}
+
+/** Off Wi-Fi with no TV announcing itself: one way forward instead of an empty list. */
+@Composable
+private fun OffWifi(modifier: Modifier, onOpenWifi: () -> Unit, onAddByIp: () -> Unit) {
+    Column(
+        modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(Modifier.size(112.dp), shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(DeviceIcons.WifiOff, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("This phone isn't on Wi-Fi", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text(
+            "Join the same Wi-Fi as your TV. Tellyscope looks for it again as soon as you're on.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(4.dp))
+        Button(onClick = onOpenWifi) { Text("Open Wi-Fi settings") }
+        // VPNs and odd setups can still reach a TV by its address.
+        TextButton(onClick = onAddByIp) { Text("Add by IP address") }
+    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
