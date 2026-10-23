@@ -349,7 +349,12 @@ fun AboutDialog(commit: String?, onDismiss: () -> Unit) {
 }
 
 /** "Android 11" for SDK 30; just the SDK where the release name isn't known. */
-private fun androidName(sdk: Int): String = when (sdk) {
+internal fun androidName(sdk: Int): String = when (sdk) {
+    21 -> "Android 5.0"
+    22 -> "Android 5.1"
+    23 -> "Android 6"
+    24 -> "Android 7"
+    25 -> "Android 7.1"
     26 -> "Android 8"
     27 -> "Android 8.1"
     28 -> "Android 9"
