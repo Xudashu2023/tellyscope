@@ -28,12 +28,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import app.tellyscope.adb.Connector
 import app.tellyscope.data.AdbDeviceSource
 import app.tellyscope.data.AndroidPhoneStorage
 import app.tellyscope.data.FakeDeviceSource
@@ -51,6 +53,7 @@ import app.tellyscope.ui.ScanScreen
 import app.tellyscope.ui.SettingsScreen
 import app.tellyscope.ui.TellyscopeViewModel
 import app.tellyscope.ui.UpdateDialog
+import app.tellyscope.ui.WelcomeScreen
 import app.tellyscope.ui.theme.TellyscopeTheme
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -58,6 +61,7 @@ import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Real TVs by default. Launch with `--es scenario fake|empty|noallow` to run on
@@ -68,21 +72,31 @@ class MainActivity : ComponentActivity() {
             "noallow" -> FakeDeviceSource.Scenario.NoAllow
             else -> null
         }
+        // Existing installs with a saved TV never see the welcome; the marker keeps it to once.
+        val welcomed = File(filesDir, "welcomed")
+        val showWelcome = scenario == null && !welcomed.exists() && File(filesDir, "devices.tsv").length() == 0L
         setContent {
             TellyscopeTheme {
-                LocalNetworkGate(skip = scenario != null) {
-                    val vm: TellyscopeViewModel = viewModel(
-                        factory = viewModelFactory {
-                            initializer {
-                                TellyscopeViewModel(
-                                    scenario?.let(::FakeDeviceSource) ?: AdbDeviceSource(applicationContext),
-                                    AndroidPhoneStorage(applicationContext),
-                                    updates = if (scenario != null) null else updateCheck(),
-                                )
-                            }
-                        },
-                    )
-                    TellyscopeApp(vm)
+                var welcome by rememberSaveable { mutableStateOf(showWelcome) }
+                if (welcome) {
+                    val done = { welcomed.createNewFile(); welcome = false }
+                    WelcomeScreen(askLocalNetwork = Build.VERSION.SDK_INT >= 37, onContinue = done, onSkip = done)
+                } else {
+                    // Straight from the welcome, Android's own dialog follows without a second screen in between.
+                    LocalNetworkGate(skip = scenario != null, askNow = showWelcome) {
+                        val vm: TellyscopeViewModel = viewModel(
+                            factory = viewModelFactory {
+                                initializer {
+                                    TellyscopeViewModel(
+                                        scenario?.let(::FakeDeviceSource) ?: AdbDeviceSource(applicationContext),
+                                        AndroidPhoneStorage(applicationContext),
+                                        updates = if (scenario != null) null else updateCheck(),
+                                    )
+                                }
+                            },
+                        )
+                        TellyscopeApp(vm)
+                    }
                 }
             }
         }
@@ -101,7 +115,7 @@ class MainActivity : ComponentActivity() {
      * [content], which keeps the first scan behind the grant.
      */
     @Composable
-    private fun LocalNetworkGate(skip: Boolean, content: @Composable () -> Unit) {
+    private fun LocalNetworkGate(skip: Boolean, askNow: Boolean, content: @Composable () -> Unit) {
         // Not in Manifest.permission below API 37; the string is the same on every SDK.
         val permission = "android.permission.ACCESS_LOCAL_NETWORK"
         fun granted() = skip || Build.VERSION.SDK_INT < 37 ||
@@ -116,6 +130,7 @@ class MainActivity : ComponentActivity() {
             // No rationale after a refusal means Android won't show its dialog again: only Settings can grant it.
             canAsk = shouldShowRequestPermissionRationale(permission)
         }
+        LaunchedEffect(Unit) { if (askNow && !ok && !denied) launcher.launch(permission) }
         // Coming back from Settings.
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { ok = granted() }
 
@@ -176,6 +191,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             onAddByIp = vm::addByIp,
             onBack = if (adding) ({ adding = false }) else null,
             onOpenWifi = { context.openWifiSettings() },
+            phoneKey = remember { Connector.fingerprint() },
         )
     } else if (remote) {
         BackHandler { remote = false }
@@ -222,7 +238,6 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 select = vm::select,
                 addDevice = { adding = true; vm.rescan() },
                 settings = { settings = true },
-                showOffline = vm::showOffline,
                 query = vm::query,
                 propose = vm::propose,
                 confirm = vm::confirm,
@@ -244,6 +259,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 remote = { remote = true },
                 debloat = { debloat = true },
                 advanced = { advanced = true },
+                checkUpdates = vm::checkUpdates,
                 setDns = vm::setDns,
                 setFastAnimations = vm::setFastAnimations,
                 clearCaches = vm::clearCaches,

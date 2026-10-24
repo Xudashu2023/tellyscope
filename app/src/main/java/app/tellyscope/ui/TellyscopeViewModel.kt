@@ -122,7 +122,6 @@ data class UiState(
     val scan: ScanUi = ScanUi(),
     val devices: List<Device> = emptyList(),
     val selectedId: String? = null,
-    val showOffline: Boolean = false,
     val device: DeviceUi = DeviceUi(),
     val query: String = "",
     val now: Long = System.currentTimeMillis(),
@@ -396,8 +395,6 @@ class TellyscopeViewModel(
             select((known.firstOrNull { it.state == DeviceState.Online } ?: known.firstOrNull())?.id)
         }
     }
-
-    fun showOffline(show: Boolean) = _state.update { it.copy(showOffline = show) }
 
     fun query(q: String) = _state.update { it.copy(query = q) }
 
@@ -885,6 +882,22 @@ class TellyscopeViewModel(
             }
         }
         return null
+    }
+
+    /** The TV shows its own update screen; Tellyscope can't see what it finds, so it only says where to look. */
+    fun checkUpdates() {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            val ok = try {
+                source.openUpdates(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _notice.value = Copy.REMOTE_LOST
+                return@launch
+            }
+            _notice.value = if (ok) Copy.UPDATES_OPENED else Copy.NO_UPDATE_SCREEN
+        }
     }
 
     fun reboot() {

@@ -167,8 +167,11 @@ object Copy {
         if (total < 10) "%.1f of %.1f GB".format(used, total) else "%.1f of %.0f GB".format(used, total)
 
     /** Free storage in plain words, rounded down so it never promises room that isn't there; null if unknown. */
-    fun free(s: Snapshot): String? {
-        val gb = s.storageUsedGb?.let { u -> s.storageTotalGb?.let { t -> (t - u).coerceAtLeast(0.0) } } ?: return null
+    fun free(s: Snapshot): String? = free(s.storageUsedGb, s.storageTotalGb)
+
+    /** [free] from the two numbers, for a TV's saved facts as well as a live reading. */
+    fun free(used: Double?, total: Double?): String? {
+        val gb = used?.let { u -> total?.let { t -> (t - u).coerceAtLeast(0.0) } } ?: return null
         return if (gb < 10) "%.1f GB free".format(Math.floor(gb * 10) / 10) else "${gb.toInt()} GB free"
     }
 
@@ -286,6 +289,8 @@ object Copy {
     const val KEY_REFUSED = "The TV didn't take that key."
     const val TYPE_REFUSED = "The TV didn't take the text. Select a text box on the TV first, then send again."
     const val REMOTE_LOST = "Lost the TV. Check it's still on and connected."
+    const val NO_UPDATE_SCREEN = "This TV has no update screen Tellyscope can open. Look in its Settings, under System or About."
+    const val UPDATES_OPENED = "Opened the update screen on the TV. Look at the TV to check for updates."
     const val REBOOT_REFUSED = "The TV said no to restarting. Use its own remote or power button instead."
     const val REBOOT_IGNORED = "The TV didn't restart. Use its own remote or power button instead."
     const val REMOTE_OFFLINE = "The TV is offline. The remote works again once it reconnects."

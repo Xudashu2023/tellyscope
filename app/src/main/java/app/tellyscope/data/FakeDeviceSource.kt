@@ -104,6 +104,7 @@ class FakeDeviceSource(
                 manufacturer = "Amazon",
                 android = "9",
                 lastSeen = clock() - 14 * 60_000,
+                lastKnown = LastKnown("Amazon", "Amazon", "9", YearMonth.of(2024, 3), 5.1, 5.4),
             ),
         ).takeIf { scenario == Scenario.Normal }.orEmpty().forEach { put(it.id, it) }
     }
@@ -304,6 +305,11 @@ class FakeDeviceSource(
 
     override suspend fun type(deviceId: String, text: String): Boolean {
         delay(150)
+        return true
+    }
+
+    override suspend fun openUpdates(deviceId: String): Boolean {
+        delay(300)
         return true
     }
 

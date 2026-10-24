@@ -50,10 +50,12 @@ import app.tellyscope.data.Suggested
 import app.tellyscope.data.SuggestedGroup
 import app.tellyscope.data.Suggestions
 import app.tellyscope.ui.AdvancedScreen
+import app.tellyscope.ui.ConnectScreen
 import app.tellyscope.ui.DebloatScreen
 import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceTabsScreen
 import app.tellyscope.ui.TvTab
+import app.tellyscope.data.LastKnown
 import app.tellyscope.ui.Copy
 import app.tellyscope.ui.TweaksBlock
 import app.tellyscope.ui.DeviceUi
@@ -63,6 +65,7 @@ import app.tellyscope.ui.FilesBlock
 import app.tellyscope.ui.FilesUi
 import app.tellyscope.ui.RestoreDialog
 import app.tellyscope.ui.PermissionScreen
+import app.tellyscope.ui.WelcomeScreen
 import app.tellyscope.ui.RebootDialog
 import app.tellyscope.ui.RemoteActions
 import app.tellyscope.ui.RemoteScreen
@@ -72,6 +75,7 @@ import app.tellyscope.ui.ScanScreen
 import app.tellyscope.ui.ScanUi
 import app.tellyscope.ui.SideloadUi
 import app.tellyscope.ui.TransferUi
+import app.tellyscope.ui.brands
 import app.tellyscope.ui.UiState
 import app.tellyscope.ui.theme.TellyscopeTheme
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
@@ -133,15 +137,7 @@ class ScreenshotTest {
         ScanScreen(ui, now, {}, {}, { _, _ -> }, {}, { null })
     }
 
-    @Test fun scan_inProgress() = scan(
-        ScanUi(
-            scanning = true,
-            progress = ScanProgress(115, 254, "192.168.1.0/24"),
-            hits = listOf(xgimi, box),
-            rows = mapOf(xgimi.ip to RowState.Found, box.ip to RowState.Found),
-        ),
-        name = "01_scan_in_progress",
-    )
+    @Test fun scan_inProgress() = scan(inProgress, name = "01_scan_in_progress")
 
     private val connectStates get() = ScanUi(
         scanning = false,
@@ -158,10 +154,38 @@ class ScreenshotTest {
 
     @Test fun scan_connectStates_dark() = scan(connectStates, dark = true, name = "02_scan_connect_states")
 
-    @Test fun scan_empty() = scan(
-        ScanUi(scanning = false, progress = ScanProgress(254, 254, "192.168.1.0/24")),
-        name = "03_scan_empty_guide",
+    private val inProgress get() = ScanUi(
+        scanning = true,
+        progress = ScanProgress(115, 254, "192.168.1.0/24"),
+        hits = listOf(xgimi, box),
+        rows = mapOf(xgimi.ip to RowState.Found, box.ip to RowState.Found),
     )
+
+    @Test fun scan_inProgress_dark() = scan(inProgress, dark = true, name = "01_scan_in_progress")
+
+    private val empty = ScanUi(scanning = true, progress = ScanProgress(40, 254, "192.168.1.0/24"))
+
+    @Test fun scan_empty() = scan(empty, name = "03_scan_empty_guide")
+
+    @Test fun scan_empty_dark() = scan(empty, dark = true, name = "03_scan_empty_guide")
+
+    private val key = "3F:A2:91:0C:7B:E4:58:D6:21:9A:C3:4F:80:1E:B7:65"
+
+    private fun connect(hit: ScanHit, row: RowState, dark: Boolean, name: String) = shot(name, dark) {
+        ConnectScreen(hit, row, now, brands.first(), key, {}, {}, {}, {})
+    }
+
+    @Test fun connect_code() = connect(chromecast, RowState.Code("4821"), false, "03_connect_code")
+
+    @Test fun connect_code_dark() = connect(chromecast, RowState.Code("4821"), true, "03_connect_code")
+
+    @Test fun connect_allow() = connect(xgimi, RowState.Waiting(now - 12_000), false, "03_connect_allow")
+
+    @Test fun connect_allow_dark() = connect(xgimi, RowState.Waiting(now - 12_000), true, "03_connect_allow")
+
+    @Test fun connect_notAllowed() = connect(unknown, RowState.NotAllowed, false, "03_connect_no_answer")
+
+    @Test fun connect_notAllowed_dark() = connect(unknown, RowState.NotAllowed, true, "03_connect_no_answer")
 
     private fun deviceState(device: DeviceUi.() -> DeviceUi = { this }): UiState = runBlocking {
         val d = Device(xgimi.ip, xgimi, DeviceState.Online, "XGIMI Horizon Pro", "XGIMI", "11", now)
@@ -206,6 +230,53 @@ class ScreenshotTest {
         return deviceState { copy(history = history, files = FilesUi(TvFolder.DOWNLOAD, files), tweaks = tweaks) }
     }
 
+    // The 0.5.0 Overview: three TVs, one offline with saved facts.
+    private fun md3State(): UiState {
+        val s = tabsState()
+        val sel = s.selected!!.copy(nickname = "Projector")
+        val cast = Device(chromecast.ip, chromecast, DeviceState.Online, "Chromecast", "Google", "12", now, nickname = "Bedroom")
+        val boxTv = Device(box.ip, box, DeviceState.Offline, "X96 Max", "Amlogic", "9", now - 2 * 3_600_000L, nickname = "Kitchen",
+            lastKnown = LastKnown("Amlogic", null, "9", java.time.YearMonth.of(2021, 3), 9.6, 14.5))
+        return s.copy(devices = listOf(sel, cast, boxTv))
+    }
+    private fun md3(name: String, dark: Boolean, state: () -> UiState = ::md3State) =
+        shot(name, dark) { DeviceTabsScreen(state(), DeviceActions()) }
+    @Test fun md3_overview() = md3("60_md3_overview", false)
+    @Test fun md3_overview_dark() = md3("60_md3_overview", true)
+    @Test fun md3_offline() = md3("62_md3_offline", false) { md3State().let { it.copy(selectedId = it.devices[2].id, device = DeviceUi(history = it.device.history)) } }
+    @Test fun md3_offline_dark() = md3("62_md3_offline", true) { md3State().let { it.copy(selectedId = it.devices[2].id, device = DeviceUi(history = it.device.history)) } }
+    @Test fun md3_apps() { shot("64_md3_apps") { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Apps) } }
+    @Test fun md3_apps_dark() { shot("64_md3_apps", dark = true) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Apps) } }
+    @Test fun md3_files() { shot("65_md3_files") { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Files) } }
+    @Test fun md3_files_dark() { shot("65_md3_files", dark = true) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Files) } }
+    // Nothing came back: the TV still has off what Tellyscope turned off.
+    private fun md3Calm() = md3State().let { st -> st.copy(device = st.device.copy(apps = st.device.apps.map { if (it.packageName == "com.xgimi.ota") it.copy(enabled = false) else it })) }
+    @Test fun md3_calm() = md3("67_md3_calm", false, state = ::md3Calm)
+    @Test fun md3_calm_dark() = md3("67_md3_calm", true, state = ::md3Calm)
+    // Nothing left to do: the list's apps are all off and none came back, so no Debloat button.
+    // Everything on the list is off, so Debloat turns tonal and leads to Apps.
+    private val listed = setOf("com.xgimi.assistant", "com.google.android.tvrecommendations", "com.netflix.ninja")
+    private fun md3Clean() = md3Calm().let { st -> st.copy(device = st.device.copy(apps = st.device.apps.map { if (it.packageName in listed) it.copy(enabled = false) else it })) }
+    @Test fun md3_clean() = md3("68_md3_clean", false, state = ::md3Clean)
+    @Test fun md3_clean_dark() = md3("68_md3_clean", true, state = ::md3Clean)
+    // An offline TV's chip still switches to it: its page shows the saved facts and Reconnect.
+    @Test fun offlineChipSelects() {
+        val state = md3State()
+        var picked: String? = null
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(state, DeviceActions(select = { picked = it })) } }
+        compose.onNodeWithText("Kitchen").performClick()
+        assertEquals(state.devices[2].id, picked)
+    }
+    // After a restart there's no snapshot: the saved storage still shows, as of the last visit.
+    @Test fun offlineAfterRestartShowsSavedStorage() {
+        val state = md3State().let { it.copy(selectedId = it.devices[2].id, device = DeviceUi()) }
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(state, DeviceActions()) } }
+        compose.onNodeWithText("As of 2 h ago").assertExists()
+        compose.onNodeWithText("4.9 GB free").assertExists()
+    }
+    @Test fun md3_oneTv() = md3("63_md3_one_tv", false) { md3State().let { it.copy(devices = it.devices.take(1)) } }
+    @Test fun md3_oneTv_dark() = md3("63_md3_one_tv", true) { md3State().let { it.copy(devices = it.devices.take(1)) } }
+
     private fun tabShots(tab: TvTab, name: String) {
         shot(name) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = tab) }
     }
@@ -218,19 +289,6 @@ class ScreenshotTest {
     @Test fun tabs_apps_dark() = shot("41_tabs_apps", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Apps) }
     @Test fun tabs_files_dark() = shot("42_tabs_files", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Files) }
     @Test fun tabs_tweaks_dark() = shot("43_tabs_tweaks", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Tweaks) }
-
-    @Test fun tabs_tvMenu() = tvMenu(dark = false)
-    @Test fun tabs_tvMenu_dark() = tvMenu(dark = true)
-
-    private fun tvMenu(dark: Boolean) {
-        val open = {
-            compose.onNodeWithContentDescription("Switch TV").performClick()
-            compose.mainClock.advanceTimeBy(1_000)
-            compose.onNodeWithText("Add a TV").assertExists()
-            Unit
-        }
-        shot("44_tabs_tv_menu", dark, screen = true, before = open) { DeviceTabsScreen(tabsState().copy(showOffline = true), DeviceActions()) }
-    }
 
     @Test fun tabs_appMenu() = appMenu(dark = false)
     @Test fun tabs_appMenu_dark() = appMenu(dark = true)
@@ -274,7 +332,8 @@ class ScreenshotTest {
         compose.onNodeWithText("Running · ", substring = true).assertDoesNotExist()
         // The three main actions sit under the system widget, Debloat among them.
         for (t in listOf("Install app", "Debloat", "Send file")) compose.onNodeWithText(t).assertIsEnabled()
-        for (t in listOf("Up for", "Last software update", "Internal storage", "Network")) compose.onNodeWithText(t).assertExists()
+        for (t in listOf("Internal storage", "Network", "Suggested for this TV", "Check for updates")) compose.onNodeWithText(t).assertExists()
+        compose.onNodeWithText("Updated ", substring = true).assertExists()
     }
 
     @Test fun device_overview_dark() = shot("04_device", dark = true) { DeviceTabsScreen(deviceState(), DeviceActions()) }
@@ -291,12 +350,13 @@ class ScreenshotTest {
         // The last stats this phone saw, 14 minutes before it went away.
         val last = fake.snapshot(off.id).copy(at = now - 14 * 60_000)
         shot("06_device_offline") {
-            DeviceTabsScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last), showOffline = true), DeviceActions())
+            DeviceTabsScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last)), DeviceActions())
         }
-        // Old numbers don't speak for a TV that's away; what it is still does.
-        compose.onNodeWithText("Up for").assertDoesNotExist()
-        compose.onNodeWithText("Internal storage").assertDoesNotExist()
-        compose.onNodeWithText("Last software update").assertExists()
+        // Away, storage shows as it was last seen; the live numbers are dashes.
+        compose.onNodeWithText("As of ", substring = true).assertExists()
+        compose.onNodeWithText("Internal storage").assertExists()
+        compose.onAllNodesWithText("\u2014").assertCountEquals(4)
+        compose.onNodeWithText("Updated ", substring = true).assertExists()
     }
 
     @Test fun device_storageFull() {
@@ -536,6 +596,10 @@ class ScreenshotTest {
         val t = TransferUi("holiday-2025.mp4", toTv = false, folder = TvFolder.DOWNLOAD, progress = Progress(301_000_000, 812_000_000))
         DeviceTabsScreen(deviceState { copy(transfer = t) }, DeviceActions())
     }
+
+    @Test fun welcome() = shot("00_welcome") { WelcomeScreen(askLocalNetwork = true, {}, {}) }
+
+    @Test fun welcome_dark() = shot("00_welcome", dark = true) { WelcomeScreen(askLocalNetwork = true, {}, {}) }
 
     @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, canAsk = true, {}, {}) }
 

@@ -12,6 +12,13 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.5.0 — 2026-10-24
+
+- **Improved:** Add your TV step by step, with a screen per TV showing this phone's key. [#66](../../pull/66)
+- **New:** The app opens on its logo, then a one-time welcome for first-time users. [#65](../../pull/65)
+- **Improved:** Overview puts the TV first, with chips to switch and debloat counts. [#64](../../pull/64)
+- **Improved:** An offline TV keeps its maker and Android version after the app restarts. [#63](../../pull/63)
+
 ## 0.4.0 — 2026-10-24
 
 - **Improved:** Each TV's page has four tabs: Overview, Apps, Files and Tweaks. [#60](../../pull/60)
