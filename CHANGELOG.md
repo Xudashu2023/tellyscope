@@ -12,6 +12,20 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.6.2 — 2026-10-25
+
+- **Fixed:** App buttons and Undo wait while another change is running. [#92](../../pull/92)
+- **Fixed:** Turning off a launcher mid-switch no longer crashes the Apps tab. [#92](../../pull/92)
+- **Fixed:** A TV connecting mid-copy no longer hides the copy's dialog. [#93](../../pull/93)
+- **Fixed:** Undo can't run twice on the same change. [#93](../../pull/93)
+- **Fixed:** Fire TV and Philips Settings and the media storage service are protected. [#93](../../pull/93)
+- **Improved:** The README names the scan's lookup of each TV's name. [#93](../../pull/93)
+- **Fixed:** Debloat no longer crashes on a list that repeats an app. [#91](../../pull/91)
+- **Fixed:** One bad entry no longer hides every debloat list. [#91](../../pull/91)
+- **Fixed:** Sending a file never overwrites a hidden file on the TV. [#91](../../pull/91)
+- **Fixed:** A failed Private DNS put-back is reported, with Undo in History. [#91](../../pull/91)
+- **Fixed:** An empty scan now retries every 15 seconds. [#91](../../pull/91)
+
 ## 0.6.1 — 2026-10-25
 
 - **Fixed:** Set as default launcher now works when Android TV Home is Home. [#84](../../pull/84)
