@@ -139,6 +139,10 @@ The app supports phones on Android 8.0 (API 26) and newer.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). If you have an Android TV, a [device report](../../issues/new?template=device_report.yml) helps even if nothing worked.
 
+## Why the name?
+
+Tellyscope is named after Wallace's [Tellyscope](https://wallaceandgromit.fandom.com/wiki/The_Tellyscope), a contraption for changing the channel without getting up. This one is a bit safer.
+
 ## License
 
 Tellyscope is licensed under the [GNU General Public License v3.0](LICENSE). Third-party credits are in [NOTICE](NOTICE).
