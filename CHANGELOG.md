@@ -23,6 +23,7 @@ until this file has a section for its version.
 - **Improved:** Search apps sits under the Apps buttons and opens to every matching app, full screen. [#78](../../pull/78)
 - **Improved:** The ⋮ menu names its TV and groups its items; Settings folds the list source under Advanced. [#78](../../pull/78)
 - **Fixed:** Welcome and pairing buttons no longer hide under the phone's navigation buttons. [#69](../../pull/69)
+- **Improved:** Messages at the bottom of the screen clear after 4 seconds, not 10. [#77](../../pull/77)
 
 ## 0.5.0 — 2026-10-24
 
