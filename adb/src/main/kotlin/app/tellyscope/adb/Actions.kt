@@ -70,18 +70,24 @@ class Actions(private val shell: AdbShell) {
     /**
      * Makes [pkg] the home screen in place of the current one, then disables the old launcher so
      * the TV can't switch back by itself. Home is checked to open [pkg] before anything is
-     * disabled; if it doesn't, the old home is set back and nothing is turned off.
+     * disabled; if it doesn't, the old home is set back and nothing is turned off. The one
+     * exception: Android skips the default while a launcher with a higher Home priority is on, as
+     * Android TV Home is. Such an old launcher is turned off first, and turned back on and made
+     * Home again if Home still doesn't open [pkg].
      */
     suspend fun makeHome(pkg: String): HomeResult {
         require(PACKAGE.matches(pkg)) { "not a package name: $pkg" }
         val from = currentHome() ?: return HomeResult.Refused(ProtectedReason.UNKNOWN_HOME)
         val old = from.substringBefore('/')
         if (old == pkg) return HomeResult.Failed("it's already the home screen")
-        val to = launchers()[pkg] ?: return HomeResult.Failed("it has no home screen")
+        val homes = shell.shell(Commands.HOME_ACTIVITIES).output
+        val to = launchersIn(homes)[pkg] ?: return HomeResult.Failed("it has no home screen")
         // The old launcher is protected as the home screen and by name; once it isn't Home, that
         // guard has done its job. Any other reason still stands.
         Protected.reason(old)?.takeIf { it != ProtectedReason.HOME_SCREEN }?.let { return HomeResult.Refused(it) }
-        if (!setHome(to)) {
+        val checked = setHome(to)
+        val priority = prioritiesIn(homes)
+        if (!checked && (priority[old] ?: 0) <= (priority[pkg] ?: 0)) {
             setHome(from)
             return HomeResult.Failed("the TV kept its own home screen, so nothing was turned off")
         }
@@ -90,7 +96,13 @@ class Actions(private val shell: AdbShell) {
             setHome(from)
             return HomeResult.Failed(off.output)
         }
-        return HomeResult.Switched(from, to)
+        if (checked || setHome(to)) return HomeResult.Switched(from, to)
+        val on = exec("pm enable --user 0 $old", undo = null) { "enabled" in it }
+        setHome(from)
+        return HomeResult.Failed(
+            if (on is ActionResult.Failed) "Home didn't open it, and the old home screen didn't turn back on: ${on.output}. Turn it back on from Apps → Built-in"
+            else "Home still didn't open it, so the old home screen was turned back on",
+        )
     }
 
     /**
@@ -128,10 +140,26 @@ class Actions(private val shell: AdbShell) {
      * Every enabled launcher, package to its home activity. Apps protected for another reason
      * aren't launchers, though they may answer Home: TV Settings has a fallback home screen.
      */
-    private suspend fun launchers(): Map<String, String> =
-        activitiesIn(shell.shell(Commands.HOME_ACTIVITIES).output).filterNot { it.startsWith("android/") }
+    private suspend fun launchers(): Map<String, String> = launchersIn(shell.shell(Commands.HOME_ACTIVITIES).output)
+
+    private fun launchersIn(brief: String): Map<String, String> =
+        activitiesIn(brief).filterNot { it.startsWith("android/") }
             .associateBy { it.substringBefore('/') }
             .filterKeys { Protected.reason(it).let { r -> r == null || r == ProtectedReason.HOME_SCREEN } }
+
+    /** Each package's Home priority, from the `priority=` line `--brief` prints above its activity. */
+    private fun prioritiesIn(brief: String): Map<String, Int> {
+        val priorities = mutableMapOf<String, Int>()
+        var last: Int? = null
+        for (line in brief.lineSequence().map(String::trim)) {
+            if (line.startsWith("priority=")) last = line.removePrefix("priority=").substringBefore(' ').toIntOrNull()
+            else if ('/' in line && ' ' !in line) {
+                last?.let { priorities[line.substringBefore('/')] = it }
+                last = null
+            }
+        }
+        return priorities
+    }
 
     private fun packagesIn(brief: String): Set<String> = activitiesIn(brief).map { it.substringBefore('/') }.toSet()
 
