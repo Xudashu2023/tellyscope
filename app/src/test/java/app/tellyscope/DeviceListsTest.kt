@@ -2,16 +2,17 @@
 
 package app.tellyscope
 
-import app.tellyscope.data.Action
 import app.tellyscope.data.AppInfo
 import app.tellyscope.data.DeviceList
 import app.tellyscope.data.DeviceLists
-import app.tellyscope.data.KEEP_REASON
 import app.tellyscope.data.LISTS_BASE
+import app.tellyscope.data.ListEntry
 import app.tellyscope.data.ListGroup
+import app.tellyscope.data.ListIndex
+import app.tellyscope.data.ListMatch
 import app.tellyscope.data.ListPackage
-import app.tellyscope.data.keepRefuses
 import app.tellyscope.data.matches
+import app.tellyscope.data.merge
 import app.tellyscope.data.SourceResult
 import app.tellyscope.data.normalize
 import app.tellyscope.data.sourceName
@@ -19,7 +20,6 @@ import app.tellyscope.data.depth
 import app.tellyscope.data.parseIndex
 import app.tellyscope.data.parseList
 import app.tellyscope.data.suggest
-import app.tellyscope.data.withKeep
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -110,9 +110,74 @@ class DeviceListsTest {
         val props = mapOf("manufacturer" to "Acme", "model" to "A55")
         DeviceLists(tmp.root).pick("sn:one", "other")
         val lists = DeviceLists(tmp.root)
-        assertEquals("other", lists.entryFor(index, "sn:one", props)?.id)
-        assertEquals("acme-55", lists.entryFor(index, "sn:two", props)?.id)
-        assertNull(lists.entryFor(index, "sn:two", mapOf("manufacturer" to "Zeta", "model" to "Z1")))
+        assertEquals("other", (lists.find(index, "sn:one", props) as ListMatch.Model).entry.id)
+        assertEquals("acme-55", (lists.find(index, "sn:two", props) as ListMatch.Model).entry.id)
+        assertEquals(ListMatch.None, lists.find(index, "sn:two", mapOf("manufacturer" to "Zeta", "model" to "Z1")))
+    }
+
+    private fun entry(id: String, name: String) = ListEntry(id, name, null, 30, "devices/$id.json", "0".repeat(64))
+
+    private val fakes = ListIndex(
+        null,
+        listOf(
+            entry("xgimi-mogo-2", "XGIMI MoGo 2"),
+            entry("xgimi-horizon", "XGIMI Horizon"),
+            entry("tcl-p7-2021", "TCL P7 2021"),
+            entry("tcl-p7-2023", "TCL P7 2023"),
+            entry("tcl-x100", "TCL X100"),
+        ),
+    )
+
+    private fun find(manufacturer: String, model: String, brand: String? = null) =
+        DeviceLists(tmp.root).find(fakes, "sn:x", mapOf("manufacturer" to manufacturer, "model" to model, "brand" to brand))
+
+    @Test fun oneListNamedAfterTheModelIsTheTvsList() {
+        // Case, spaces and dashes don't count.
+        assertEquals(ListMatch.Model(fakes.devices[0]), find("Xgimi", "MOGO-2"))
+    }
+
+    @Test fun twoListsForTheModelFallBackToTheMaker() {
+        val m = find("TCL", "P7") as ListMatch.Maker
+        assertEquals("TCL", m.maker)
+        assertEquals(listOf("tcl-p7-2021", "tcl-p7-2023", "tcl-x100"), m.entries.map { it.id })
+    }
+
+    @Test fun theModelMustBeWholeWordsNotPartOfOne() {
+        // "X10" is not "X100": the maker's lists, unticked, instead of the wrong model's.
+        assertTrue(find("TCL", "X10") is ListMatch.Maker)
+        assertEquals(ListMatch.Model(fakes.devices[4]), find("TCL", "X100"))
+    }
+
+    @Test fun theBrandFindsTheMakerWhenTheManufacturerDoesnt() {
+        // Like a Philips TV, which reports its factory, TPV, as manufacturer.
+        assertEquals(ListMatch.Model(fakes.devices[0]), find("Zeta", "MoGo 2", brand = "XGIMI"))
+        assertEquals(2, (find("Zeta", "Halo+", brand = "XGIMI") as ListMatch.Maker).entries.size)
+    }
+
+    @Test fun aModelWithNoListGetsEveryListFromItsMaker() {
+        val m = find("XGIMI", "Halo+") as ListMatch.Maker
+        assertEquals(listOf("xgimi-mogo-2", "xgimi-horizon"), m.entries.map { it.id })
+        // A list named after the model, but from another maker, is not this TV's.
+        assertEquals(ListMatch.None, find("Zeta", "MoGo 2"))
+    }
+
+    @Test fun noListForTheModelOrMakerIsNone() {
+        assertEquals(ListMatch.None, find("Zeta", "Z1"))
+        assertEquals(ListMatch.None, find("", ""))
+    }
+
+    @Test fun aKeepInOneOfTheMakersListsProtectsAnAppAnotherTurnsOff() {
+        val a = DeviceList("tcl-p7-2021", "TCL P7 2021", "Android TV 11", 30, setOf("com.tcl.hdmi"), listOf(ListGroup("Junk", listOf(ListPackage("com.tcl.ads", null, false)))))
+        val b = DeviceList(
+            "tcl-p7-2023", "TCL P7 2023", "Android TV 12", 31, emptySet(),
+            listOf(ListGroup("Junk", listOf(ListPackage("com.tcl.hdmi", null, false), ListPackage("com.tcl.ads", null, false)))),
+        )
+        val merged = merge("TCL", listOf(a, b))
+        assertEquals(listOf("com.tcl.ads", "com.tcl.hdmi"), merged.groups.single().packages.map { it.pkg })
+        val shown = suggest(merged, listOf(app("com.tcl.hdmi"), app("com.tcl.ads")), sdk = 30).flatMap { it.packages }
+        assertEquals(listOf("com.tcl.ads"), shown.map { it.pkg })
+        // No tested Android, so nothing starts ticked.
+        assertFalse(shown.single().ticked)
     }
 
     @Test fun onlyPackagesTheTvHasAndStillHasOnAreSuggested() = runTest {
@@ -139,21 +204,8 @@ class DeviceListsTest {
         assertEquals(mapOf("com.a.one" to false, "com.a.two" to false), suggest(list.copy(sdk = null), apps, null).flatMap { it.packages }.associate { it.pkg to it.ticked })
     }
 
-    @Test fun keepOnlyAddsProtection() {
+    @Test fun keepIsNeverSuggested() {
         val keep = setOf("com.acme.hdmi")
-        assertEquals(KEEP_REASON, withKeep(null, "com.acme.hdmi", enabled = true, keep))
-        // A built-in reason always survives, list or no list.
-        assertEquals("this is your home screen", withKeep("this is your home screen", "com.acme.launcher", enabled = true, keep))
-        assertEquals("this is your home screen", withKeep("this is your home screen", "com.acme.launcher", enabled = true, emptySet()))
-        // Already off: Enable must still be offered.
-        assertNull(withKeep(null, "com.acme.hdmi", enabled = false, keep))
-
-        assertTrue(keepRefuses(Action.Disable, "com.acme.hdmi", keep))
-        assertTrue(keepRefuses(Action.Stop, "com.acme.hdmi", keep))
-        assertTrue(keepRefuses(Action.Uninstall, "com.acme.hdmi", keep))
-        assertFalse(keepRefuses(Action.Enable, "com.acme.hdmi", keep))
-        assertFalse(keepRefuses(Action.Disable, "com.acme.reporter", keep))
-
         // A list that names a package in both keep and a group never suggests it.
         val list = DeviceList("x", "X", null, 30, keep, listOf(ListGroup("Junk", listOf(ListPackage("com.acme.hdmi", null, false)))))
         assertTrue(suggest(list, listOf(app("com.acme.hdmi")), 30).isEmpty())

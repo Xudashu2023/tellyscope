@@ -12,6 +12,21 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.6.0 — 2026-10-24
+
+- **Improved:** The README now shows a real TV home screen after Tellyscope. [#79](../../pull/79)
+- **Improved:** Debloat finds your TV's list itself, or its maker's, or lets you pick. [#70](../../pull/70)
+- **Improved:** The TV tops every tab and folds into the bar as you scroll. [#71](../../pull/71)
+- **Improved:** Apps splits into Running, Installed and Built-in tabs, with the apps the TV needs folded under System. [#72](../../pull/72)
+- **Improved:** The TV's icon and name glide into the bar, Apps and Files pin their buttons, and empty pages say so. [#74](../../pull/74)
+- **Improved:** Protected apps drop the lock icon; the line saying why stays. [#74](../../pull/74)
+- **Fixed:** The upload icon draws properly again. [#74](../../pull/74)
+- **New:** Switch home back to the TV's own launcher in one tap; list keeps only warn. [#76](../../pull/76)
+- **Improved:** Search apps sits under the Apps buttons and opens to every matching app, full screen. [#78](../../pull/78)
+- **Improved:** The ⋮ menu names its TV and groups its items; Settings folds the list source under Advanced. [#78](../../pull/78)
+- **Fixed:** Welcome and pairing buttons no longer hide under the phone's navigation buttons. [#69](../../pull/69)
+- **Improved:** Messages at the bottom of the screen clear after 4 seconds, not 10. [#77](../../pull/77)
+
 ## 0.5.0 — 2026-10-24
 
 - **Improved:** Add your TV step by step, with a screen per TV showing this phone's key. [#66](../../pull/66)

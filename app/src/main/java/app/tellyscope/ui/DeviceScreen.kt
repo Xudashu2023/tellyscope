@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -107,6 +106,8 @@ data class DeviceActions(
     val answerRequest: (allow: Boolean, always: Boolean) -> Unit = { _, _ -> },
     /** Hides that prompt on the phone without answering it; the TV keeps asking. */
     val dismissRequest: () -> Unit = {},
+    /** Folds an Apps tab's System section away, or opens it; remembered across restarts. */
+    val foldSystem: (AppsTab, Boolean) -> Unit = { _, _ -> },
 )
 
 /** Off while the remote is made faster: the device page hides its Remote button. */
@@ -354,7 +355,7 @@ fun UninstallDialog(app: AppInfo, onUninstall: () -> Unit, onDismiss: () -> Unit
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(Copy.uninstallTitle(app.label)) },
-        text = { Text(Copy.explain(Action.Uninstall, app.label, app.packageName)) },
+        text = { Text(Copy.explain(Action.Uninstall, app.label, app.packageName) + if (app.listKeep) "\n\n${Copy.KEEP_WARNING}" else "") },
         confirmButton = {
             Button(
                 onClick = onUninstall,
@@ -379,7 +380,8 @@ internal fun AppRow(
     var open by rememberSaveable(app.packageName) { mutableStateOf(false) }
     // A launcher can be protected by its name and still be offered as the new home screen.
     val home = app.homeInstead?.takeIf { app.enabled && homeLabel != null }
-    val changeable = app.protectedReason == null || home != null
+    val back = app.homeBack?.takeIf { app.enabled }
+    val changeable = app.protectedReason == null || home != null || back != null
     val ram = procs.filter { it.packageName == app.packageName }.sumOf { it.ramMb }
     val status = when {
         !app.enabled -> "Disabled"
@@ -398,9 +400,6 @@ internal fun AppRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (app.protectedReason != null) {
-                Icon(Icons.Default.Lock, contentDescription = "Protected", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
             if (busy) androidx.compose.material3.LoadingIndicator(Modifier.size(32.dp))
         }
         val proposed = pending?.takeIf { it.first == app.packageName }?.second
@@ -416,12 +415,17 @@ internal fun AppRow(
                         if (app.removable) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Uninstall) }) { Text(Copy.button(Action.Uninstall)) }
                     }
                     if (home != null) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Home) }) { Text(Copy.MAKE_HOME) }
+                    if (back != null) OutlinedButton(onClick = { actions.propose(app.packageName, Action.HomeBack) }) { Text(Copy.homeBack(back)) }
                 } else if (proposed == Action.Uninstall) {
                     UninstallDialog(app, onUninstall = actions.confirm, onDismiss = actions.cancel)
                 } else {
                     Text(
-                        if (proposed == Action.Home && home != null) Copy.explainHome(app.label, app.packageName, homeLabel!!, home)
-                        else Copy.explain(proposed, app.label, app.packageName),
+                        when {
+                            proposed == Action.Home && home != null -> Copy.explainHome(app.label, app.packageName, homeLabel!!, home)
+                            proposed == Action.HomeBack && back != null -> Copy.explainHomeBack(app.label, back)
+                            app.listKeep && proposed != Action.Enable -> Copy.explain(proposed, app.label, app.packageName) + "\n\n" + Copy.KEEP_WARNING
+                            else -> Copy.explain(proposed, app.label, app.packageName)
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

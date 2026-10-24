@@ -39,6 +39,7 @@ import app.tellyscope.adb.Connector
 import app.tellyscope.data.AdbDeviceSource
 import app.tellyscope.data.AndroidPhoneStorage
 import app.tellyscope.data.FakeDeviceSource
+import app.tellyscope.data.FoldBook
 import app.tellyscope.data.UpdateCheck
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.Copy
@@ -91,6 +92,7 @@ class MainActivity : ComponentActivity() {
                                         scenario?.let(::FakeDeviceSource) ?: AdbDeviceSource(applicationContext),
                                         AndroidPhoneStorage(applicationContext),
                                         updates = if (scenario != null) null else updateCheck(),
+                                        folds = FoldBook(File(filesDir, "folds.properties")),
                                     )
                                 }
                             },
@@ -220,7 +222,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             snackbar = snackbar,
         )
     } else if (debloat) {
-        // Its own back handler steps back from the review to the model before leaving.
+        // Its own back handler closes the list search before leaving.
         DebloatScreen(
             state.device.lists,
             onPick = vm::pickList,
@@ -229,6 +231,8 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             snackbar = snackbar,
             source = state.listSource,
             tvMakers = listOfNotNull(state.selected?.brand, state.selected?.manufacturer).distinct(),
+            tv = state.selected,
+            tvApps = state.device.apps,
         )
     } else {
         DeviceTabsScreen(
@@ -266,6 +270,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 screenshot = { saveScreenshot.launch(Copy.screenshotName(System.currentTimeMillis())) },
                 answerRequest = vm::answerRequest,
                 dismissRequest = vm::dismissRequest,
+                foldSystem = vm::foldSystem,
             ),
         )
     }
@@ -290,7 +295,7 @@ internal fun Snackbars(
             val result = host.showSnackbar(
                 message = Copy.done(d.entry.action, d.entry.label),
                 actionLabel = d.entry.undo?.let(Copy::undo),
-                duration = SnackbarDuration.Long,
+                duration = SnackbarDuration.Short,
             )
             if (result == SnackbarResult.ActionPerformed) undo(d)
         }
@@ -298,7 +303,7 @@ internal fun Snackbars(
     LaunchedEffect(host, notice) {
         notice.filterNotNull().collect { message ->
             noticeShown()
-            host.showSnackbar(message, duration = SnackbarDuration.Long)
+            host.showSnackbar(message, duration = SnackbarDuration.Short)
         }
     }
 }

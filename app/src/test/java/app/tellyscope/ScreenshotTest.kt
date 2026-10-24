@@ -12,19 +12,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithTag
 import app.tellyscope.adb.ApkInfo
 import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.InstallRefusal
@@ -48,8 +57,10 @@ import app.tellyscope.data.ScanKind
 import app.tellyscope.data.ScanProgress
 import app.tellyscope.data.Suggested
 import app.tellyscope.data.SuggestedGroup
+import app.tellyscope.data.Proc
 import app.tellyscope.data.Suggestions
 import app.tellyscope.ui.AdvancedScreen
+import app.tellyscope.ui.AppsTab
 import app.tellyscope.ui.ConnectScreen
 import app.tellyscope.ui.DebloatScreen
 import app.tellyscope.ui.DeviceActions
@@ -76,6 +87,12 @@ import app.tellyscope.ui.ScanUi
 import app.tellyscope.ui.SideloadUi
 import app.tellyscope.ui.TransferUi
 import app.tellyscope.ui.brands
+import app.tellyscope.ui.name
+import app.tellyscope.ui.SettingsScreen
+import app.tellyscope.data.RELEASES
+import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.runtime.CompositionLocalProvider
 import app.tellyscope.ui.UiState
 import app.tellyscope.ui.theme.TellyscopeTheme
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
@@ -88,6 +105,7 @@ import java.nio.file.Files
 import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -245,8 +263,165 @@ class ScreenshotTest {
     @Test fun md3_overview_dark() = md3("60_md3_overview", true)
     @Test fun md3_offline() = md3("62_md3_offline", false) { md3State().let { it.copy(selectedId = it.devices[2].id, device = DeviceUi(history = it.device.history)) } }
     @Test fun md3_offline_dark() = md3("62_md3_offline", true) { md3State().let { it.copy(selectedId = it.devices[2].id, device = DeviceUi(history = it.device.history)) } }
+
+    /**
+     * Scrolled past the hero: it has collapsed into the bar, with the ⋮ menu still in place. On a
+     * phone-height screen, so each tab has more than a screenful to scroll.
+     */
+    private fun collapsed(name: String, dark: Boolean, badge: String, tab: TvTab = TvTab.Overview, state: () -> UiState = ::md3State) {
+        val scroll = { compose.onNode(hasScrollAction()).performScrollToIndex(1); Unit }
+        shot(name, dark, before = scroll) { DeviceTabsScreen(state(), DeviceActions(), startTab = tab) }
+        compose.onAllNodesWithText(badge).onFirst().assertExists()
+        compose.onNodeWithContentDescription("More options").assertExists()
+        // The chips scrolled away, or were never there. The list keeps items just off screen composed, so not shown is the check.
+        val chips = compose.onAllNodesWithText("Device")
+        repeat(chips.fetchSemanticsNodes().size) { chips[it].assertIsNotDisplayed() }
+    }
+
+    private fun offlineMd3() = md3State().let { it.copy(selectedId = it.devices[2].id, device = DeviceUi(history = it.device.history)) }
+
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_collapsed() = collapsed("61_md3_collapsed", false, "Connected")
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_collapsed_dark() = collapsed("61_md3_collapsed", true, "Connected")
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_offline_collapsed() = collapsed("62_md3_offline_collapsed", false, "Offline", state = ::offlineMd3)
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_offline_collapsed_dark() = collapsed("62_md3_offline_collapsed", true, "Offline", state = ::offlineMd3)
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_apps_collapsed() = collapsed("64_md3_apps_collapsed", false, "Connected", TvTab.Apps)
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_apps_collapsed_dark() = collapsed("64_md3_apps_collapsed", true, "Connected", TvTab.Apps)
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_files_collapsed() = collapsed("65_md3_files_collapsed", false, "Connected", TvTab.Files)
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_files_collapsed_dark() = collapsed("65_md3_files_collapsed", true, "Connected", TvTab.Files)
+    // On a tall screen the short tabs still fold the hero fully into the bar: the end space makes the room.
+    @Test fun md3_files_foldsOnTallScreen() = collapsed("65_md3_files_collapsed_tall", false, "Connected", TvTab.Files)
+    @Test fun md3_tweaks_foldsOnTallScreen() = collapsed("66_md3_tweaks_collapsed_tall", false, "Connected", TvTab.Tweaks)
+    // Download and Movies are tabs under the hero now, like Apps.
+    private fun moviesState() = md3State().let { it.copy(device = it.device.copy(files = FilesUi(TvFolder.MOVIES, listOf(
+        TvFile("holiday-2025.mp4", 812_000_000, now - 3 * 86_400_000L),
+        TvFile("family-trip-2025.mp4", 486_000_000, now - 9 * 86_400_000L),
+    )))) }
+    // The end space is Files' own: Overview, long after it on a phone-height screen, ends with none.
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun longTabAfterShortOneHasNoEndSpace() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Files) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        assertTrue(compose.onNodeWithTag("tail").fetchSemanticsNode().size.height > 0)
+        compose.onNodeWithText("Overview").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        // By key: a space of no height never counts as displayed, so scrolling to the node would never stop.
+        compose.onNode(hasScrollAction()).performScrollToKey("tail")
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(0, compose.onNodeWithTag("tail").fetchSemanticsNode().size.height)
+    }
+    private fun emptyFiles() = md3State().let { it.copy(device = it.device.copy(files = FilesUi(TvFolder.DOWNLOAD, emptyList()))) }
+    @Test fun md3_files_empty() {
+        shot("76_md3_files_empty") { DeviceTabsScreen(emptyFiles(), DeviceActions(), startTab = TvTab.Files) }
+        compose.onNodeWithText("Nothing in Download yet").assertIsDisplayed()
+        // The save hint is only for files there are.
+        compose.onNodeWithText("Tap a file to save a copy on your phone.").assertDoesNotExist()
+    }
+    @Test fun md3_files_empty_dark() { shot("76_md3_files_empty", dark = true) { DeviceTabsScreen(emptyFiles(), DeviceActions(), startTab = TvTab.Files) } }
+    // Part way through the fold: the cookie and name on their way to the bar, drawn once, over both.
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_apps_folding() {
+        val part = { compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 150f) }; Unit }
+        shot("77_md3_apps_folding", before = part) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Apps) }
+        // The bar's own title stays out of the tree until the hero has fully folded.
+        compose.onNodeWithText("Connected").assertDoesNotExist()
+    }
+    @Test fun md3_files_movies() { shot("73_md3_files_movies") { DeviceTabsScreen(moviesState(), DeviceActions(), startTab = TvTab.Files) } }
+    @Test fun md3_files_movies_dark() { shot("73_md3_files_movies", dark = true) { DeviceTabsScreen(moviesState(), DeviceActions(), startTab = TvTab.Files) } }
+    @Test fun md3_files_offline() {
+        shot("74_md3_files_offline") { DeviceTabsScreen(offlineMd3(), DeviceActions(), startTab = TvTab.Files) }
+        compose.onNodeWithText("Movies").assertExists()
+        compose.onNodeWithText("Connect to the TV to see its files.").assertExists()
+    }
+    @Test fun md3_files_offline_dark() { shot("74_md3_files_offline", dark = true) { DeviceTabsScreen(offlineMd3(), DeviceActions(), startTab = TvTab.Files) } }
+    @Test fun filesTabsPickTheFolder() {
+        val picked = mutableListOf<TvFolder>()
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(md3State(), DeviceActions(folder = { picked += it }), startTab = TvTab.Files) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Movies").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(listOf(TvFolder.MOVIES), picked)
+    }
+    @Test fun md3_tweaks() { shot("66_md3_tweaks") { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Tweaks) } }
+    @Test fun md3_tweaks_dark() { shot("66_md3_tweaks", dark = true) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Tweaks) } }
+    @Test fun md3_tweaks_offline() { shot("75_md3_tweaks_offline") { DeviceTabsScreen(offlineMd3(), DeviceActions(), startTab = TvTab.Tweaks) } }
+    @Test fun md3_tweaks_offline_dark() { shot("75_md3_tweaks_offline", dark = true) { DeviceTabsScreen(offlineMd3(), DeviceActions(), startTab = TvTab.Tweaks) } }
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_tweaks_collapsed_dark() = collapsed("66_md3_tweaks_collapsed", true, "Connected", TvTab.Tweaks)
+    // "See changes" on Overview still lands on Tweaks at Recent changes, the end space notwithstanding.
+    @Test fun seeChangesLandsOnRecentChanges() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(md3State(), DeviceActions()) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("See changes"))
+        compose.onNodeWithText("See changes").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Recent changes").assertIsDisplayed()
+        compose.onAllNodesWithText("Connected").onFirst().assertExists() // folded into the bar
+    }
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun md3_tweaks_collapsed() = collapsed("66_md3_tweaks_collapsed", false, "Connected", TvTab.Tweaks)
+
+    @Test fun md3_expandedHasNoBarTitle() {
+        md3("60_md3_overview", false)
+        // At rest the bar holds only ⋮; the hero's pill says how the TV is doing instead.
+        compose.onNodeWithText("Connected").assertDoesNotExist()
+    }
+    // The tabs share one list: a tab opened after another was scrolled starts at the top, hero unfolded.
+    @Config(qualifiers = "w411dp-h640dp-xxhdpi")
+    @Test fun tabSwitchOpensAtTop() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Apps) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNode(hasScrollAction()).performScrollToIndex(1)
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onAllNodesWithText("Connected").onFirst().assertExists()
+        compose.onNodeWithText("Files").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Connected").assertDoesNotExist()
+    }
     @Test fun md3_apps() { shot("64_md3_apps") { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Apps) } }
     @Test fun md3_apps_dark() { shot("64_md3_apps", dark = true) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Apps) } }
+    // The Apps tab's own tabs: what came with the TV, and only what the user installed.
+    private fun appsTab(name: String, dark: Boolean, label: String, state: () -> UiState = ::md3State) =
+        shot(name, dark, before = { compose.onNodeWithText(label).performClick(); Unit }) { DeviceTabsScreen(state(), DeviceActions(), startTab = TvTab.Apps) }
+    @Test fun md3_apps_installed() = appsTab("69_md3_apps_installed", false, "Installed")
+    @Test fun md3_apps_installed_dark() = appsTab("69_md3_apps_installed", true, "Installed")
+    @Test fun md3_apps_builtin() = appsTab("70_md3_apps_builtin", false, "Built-in")
+    @Test fun md3_apps_builtin_dark() = appsTab("70_md3_apps_builtin", true, "Built-in")
+    @Test fun md3_apps_offline() {
+        shot("71_md3_apps_offline") { DeviceTabsScreen(offlineMd3(), DeviceActions(), startTab = TvTab.Apps) }
+        compose.onNodeWithText(Copy.RUNNING_OFFLINE).assertExists()
+    }
+    @Test fun md3_apps_offline_dark() { shot("71_md3_apps_offline", dark = true) { DeviceTabsScreen(offlineMd3(), DeviceActions(), startTab = TvTab.Apps) } }
+    // Folded, the System header stays with its count and the protected apps go.
+    private fun foldedBuiltIn() = md3State().copy(foldedSystem = setOf(AppsTab.BuiltIn))
+    @Test fun md3_apps_builtin_folded() = appsTab("72_md3_apps_builtin_folded", false, "Built-in", ::foldedBuiltIn)
+    @Test fun md3_apps_builtin_folded_dark() {
+        appsTab("72_md3_apps_builtin_folded", true, "Built-in", ::foldedBuiltIn)
+        compose.onNodeWithText("System UI").assertDoesNotExist()
+    }
+    @Test fun systemHeaderFoldsItsTab() {
+        var folded: Pair<AppsTab, Boolean>? = null
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(md3State(), DeviceActions(foldSystem = { t, f -> folded = t to f }), startTab = TvTab.Apps) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Built-in").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.SYSTEM_WHY))
+        compose.onNodeWithText(Copy.SYSTEM_WHY).performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(AppsTab.BuiltIn to true, folded)
+    }
     @Test fun md3_files() { shot("65_md3_files") { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Files) } }
     @Test fun md3_files_dark() { shot("65_md3_files", dark = true) { DeviceTabsScreen(md3State(), DeviceActions(), startTab = TvTab.Files) } }
     // Nothing came back: the TV still has off what Tellyscope turned off.
@@ -301,18 +476,120 @@ class ScreenshotTest {
                 DeviceTabsScreen(tabsState(), DeviceActions(query = { queries += it }), startTab = TvTab.Apps)
             }
         }
-        compose.onNodeWithContentDescription("Search apps").performClick()
+        compose.onNodeWithText("Search apps").performClick()
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithText("Overview").performClick()
         compose.mainClock.advanceTimeBy(1_000)
-        // Leaving Apps closed the search and cleared its query; the icon is gone with it.
+        // Leaving Apps closed the search and cleared its query; the field is gone with it.
         assertEquals(listOf(""), queries)
-        compose.onNodeWithContentDescription("Search apps").assertDoesNotExist()
+        compose.onNodeWithText("Search apps").assertDoesNotExist()
         compose.onNodeWithContentDescription("Close search").assertDoesNotExist()
         compose.onNodeWithText("Apps").performClick()
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNodeWithContentDescription("Search apps").assertExists()
+        compose.onNodeWithText("Search apps").assertExists()
     }
+
+    @Test fun tabs_searchHidesTheTvAndBackBringsItBack() {
+        val state = tabsState()
+        val tv = name(state.selected!!)
+        lateinit var back: OnBackPressedDispatcher
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            back = LocalOnBackPressedDispatcherOwner.current!!.onBackPressedDispatcher
+            TellyscopeTheme(dark = false, dynamic = false) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        val shown = { compose.onAllNodesWithText(tv).fetchSemanticsNodes().size }
+        val atRest = shown()
+        assertTrue(atRest > 0)
+        for (close in listOf({ compose.runOnUiThread { back.onBackPressed() } }, { compose.onNodeWithContentDescription("Close search").performClick() })) {
+            compose.onNodeWithText("Search apps").performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+            // The field has the top, and the TV and the buttons are gone.
+            compose.onNodeWithContentDescription("Close search").assertExists()
+            compose.onNodeWithText("Installed").assertDoesNotExist()
+            assertEquals(0, shown())
+            close()
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.onNodeWithContentDescription("Close search").assertDoesNotExist()
+            assertEquals(atRest, shown())
+        }
+    }
+
+    @Test fun tabs_searchOpen() = searchOpen(dark = false)
+    @Test fun tabs_searchOpen_dark() = searchOpen(dark = true)
+
+    private fun searchOpen(dark: Boolean) {
+        val open = { compose.onNodeWithText("Search apps").performClick(); Unit }
+        shot("80_apps_search", dark, before = open) { DeviceTabsScreen(tabsState().copy(query = "xgimi"), DeviceActions(), startTab = TvTab.Apps) }
+    }
+
+    @Test fun tabs_searchFindsAppsUnderEveryButton() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            TellyscopeTheme(dark = false, dynamic = false) {
+                DeviceTabsScreen(tabsState().copy(query = "google"), DeviceActions(), startTab = TvTab.Apps)
+            }
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Search apps").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        // YouTube is only under Installed and Google Play services only under Built-in; one list has both.
+        compose.onNodeWithText("YouTube").assertExists()
+        compose.onNodeWithText("Google Play services").assertExists()
+        compose.onNodeWithText("System", substring = true).assertDoesNotExist()
+    }
+
+    /** Opens ⋮ on a fresh screen, checks both blocks are there, and taps [item]; returns the actions it called. */
+    private fun pickFromMenu(item: String): List<String> {
+        val calls = mutableListOf<String>()
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            TellyscopeTheme(dark = false, dynamic = false) {
+                DeviceTabsScreen(tabsState(), DeviceActions(advanced = { calls += "advanced" }, settings = { calls += "settings" }))
+            }
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        // Both blocks are there: this TV's items, then the app's. Rename, Forget and About open dialogs.
+        for (i in listOf("Rename this TV", "Forget this TV", "Advanced", "Settings", "About & licences")) compose.onNodeWithText(i).assertHasClickAction()
+        compose.onNodeWithText(item).performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        return calls
+    }
+
+    @Test fun tabs_menuAdvancedOpensAdvanced() = assertEquals(listOf("advanced"), pickFromMenu("Advanced"))
+    @Test fun tabs_menuSettingsOpensSettings() = assertEquals(listOf("settings"), pickFromMenu("Settings"))
+
+    private fun settings(opened: MutableList<String> = mutableListOf()) = @Composable {
+        val links = object : UriHandler { override fun openUri(uri: String) { opened += uri } }
+        CompositionLocalProvider(LocalUriHandler provides links) {
+            SettingsScreen(null, onListSource = {}, checkUpdates = true, alphaBuild = false, onCheckUpdates = {}, back = {})
+        }
+    }
+
+    @Test fun settings_advancedFoldedAndLinks() {
+        val opened = mutableListOf<String>()
+        shot("81_settings") { settings(opened)() }
+        // Check for updates leads; Advanced starts folded.
+        compose.onNodeWithText("Check for updates").assertExists()
+        compose.onNodeWithText("Use your own debloat lists").assertDoesNotExist()
+        compose.onNodeWithText("Advanced").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("cleanyourtv").assertExists()
+        compose.onNodeWithText(" 30k+").assertExists()
+        compose.onNodeWithText("cleanyourtv").performClick()
+        compose.onNodeWithText("How to use your own lists").performClick()
+        assertEquals(listOf("https://github.com/Gathin23/cleanyourtv", RELEASES.removeSuffix("/releases") + "/blob/main/CONTRIBUTING.md#using-your-own-lists"), opened)
+        assertTrue(opened[1].startsWith("https://github.com/") && opened[1].contains("/tellyscope/blob/main/CONTRIBUTING.md"))
+        // It opens the existing source dialog, unchanged.
+        compose.onNodeWithText("Use your own debloat lists").assertHasClickAction()
+    }
+
+    @Test fun settings_dark() = shot("81_settings", dark = true) { settings()() }
+    @Test fun settings_advanced() = shot("82_settings_advanced", before = { compose.onNodeWithText("Advanced").performClick(); Unit }) { settings()() }
+    @Test fun settings_advanced_dark() = shot("82_settings_advanced", dark = true, before = { compose.onNodeWithText("Advanced").performClick(); Unit }) { settings()() }
 
     private fun appMenu(dark: Boolean) {
         val open = {
@@ -400,37 +677,47 @@ class ScreenshotTest {
             compose.onNodeWithText(label).performClick()
             compose.mainClock.advanceTimeBy(1_000)
         }
-        shot("26_apps_uninstall_offered", screen = true, before = { tap("Netflix"); tap("XGIMI Assistant"); Unit }) {
+        shot("26_apps_uninstall_offered", screen = true, before = { tap("Installed"); tap("Netflix"); Unit }) {
             DeviceTabsScreen(deviceState(), DeviceActions(propose = { pkg, a -> proposed += pkg to a }), startTab = TvTab.Apps)
         }
         // Netflix was installed by the user; XGIMI Assistant came with the TV and only gets Disable.
         compose.onAllNodesWithText("Uninstall").assertCountEquals(1)
         compose.onNodeWithText("Uninstall").performClick()
         assertEquals(listOf("com.netflix.ninja" to Action.Uninstall), proposed)
+        tap("Built-in"); tap("XGIMI Assistant")
+        compose.onNodeWithText("Disable").assertExists()
+        compose.onAllNodesWithText("Uninstall").assertCountEquals(0)
     }
 
     @Test fun apps_uninstallAsksInADialog() {
         val state = deviceState { copy(pending = "com.netflix.ninja" to Action.Uninstall) }
-        shot("27_apps_uninstall_confirm", screen = true) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
+        // Netflix isn't running, so it's under Installed.
+        shot("27_apps_uninstall_confirm", screen = true, before = { compose.onNodeWithText("Installed").performClick(); Unit }) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
         compose.onNodeWithText("Uninstall Netflix?").assertExists()
         compose.onNodeWithText("can't be undone", substring = true).assertExists()
         compose.onNodeWithText("Yes, uninstall it").assertExists()
     }
 
     @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
-    @Test fun apps_protectedAreFoldedAway() {
-        shot("28_apps_protected_folded", screen = true) { DeviceTabsScreen(deviceState(), DeviceActions(), startTab = TvTab.Apps) }
-        compose.onNodeWithText("Changeable", substring = true).assertIsSelected()
-        compose.onNodeWithText("System UI").assertDoesNotExist()
-        compose.onNodeWithText("Can't be changed", substring = true).performClick()
-        compose.mainClock.advanceTimeBy(1_000)
+    @Test fun apps_systemFoldsAway() {
+        // Running opens with the protected apps under System, unfolded.
+        shot("28_apps_system", screen = true) { DeviceTabsScreen(deviceState(), DeviceActions(), startTab = TvTab.Apps) }
         compose.onNodeWithText("System UI").assertExists()
     }
+    // A fold the user chose hides them, header and count still there.
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun apps_foldedSystemStaysFolded() {
+        val state = deviceState().copy(foldedSystem = setOf(AppsTab.Running))
+        shot("28_apps_system_folded", screen = true) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
+        compose.onNodeWithText("${Copy.SYSTEM} (", substring = true).assertExists()
+        compose.onNodeWithText("System UI").assertDoesNotExist()
+    }
 
-    /** A real TV's app list: no per-process stats yet, so the apps sit right under the stat grid. */
+    /** A real TV's app list, every app running so all of them show under Running. */
     private fun appsState(apps: List<AppInfo>): UiState {
         val base = deviceState()
-        return base.copy(device = base.device.copy(snapshot = base.device.snapshot?.copy(procs = emptyList()), apps = apps))
+        val procs = apps.mapIndexed { i, a -> Proc(3000 + i, a.packageName, a.packageName, 1.0, 64) }
+        return base.copy(device = base.device.copy(snapshot = base.device.snapshot?.copy(procs = procs), apps = apps))
     }
 
     private val tvApps = listOf(
@@ -645,58 +932,116 @@ class ScreenshotTest {
     @Config(qualifiers = "w411dp-h2400dp-xxhdpi")
     @Test fun advanced() = shot("17_advanced") { AdvancedScreen(deviceState(), back = {}) }
 
-    @Test fun debloat_pick() {
-        val lists = deviceState().device.lists
-        shot("18_debloat_pick") { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("XGIMI")) }
-        // The match on its own, already chosen, with a way to change it; no list of every model.
-        compose.onNodeWithText("Next").assertIsEnabled()
-        compose.onNodeWithText("Change").assertExists()
+    @Test fun debloat_model() = debloatModel(dark = false)
+
+    @Test fun debloat_model_dark() = debloatModel(dark = true)
+
+    /** The TV's own list: straight to the apps, with "Not this TV?" in case it's wrong. */
+    private fun debloatModel(dark: Boolean) {
+        val lists = deviceState().device.lists as Suggestions.Ready
+        shot("18_debloat_model", dark) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("XGIMI")) }
+        compose.onNodeWithText(lists.list.name).assertExists()
+        compose.onNodeWithText("This model's list", substring = true).assertExists()
+        compose.onNodeWithText("These apps will be turned off", substring = true).assertExists()
+        compose.onNodeWithText("optional: tick it if you don't use it", substring = true).assertExists()
+        compose.onNodeWithText("Not this TV?").assertExists()
         compose.onNodeWithText("TCL C-series").assertDoesNotExist()
+        val ticked = lists.groups.flatMap { it.packages }.count { it.ticked }
+        compose.onNodeWithText("Disable $ticked ${if (ticked == 1) "app" else "apps"}").assertIsEnabled()
     }
 
-    @Test fun debloat_pick_change() {
+    /** No list for the model: its maker's lists merged, nothing ticked. */
+    private fun makerLists(): Suggestions.Ready {
+        val r = deviceState().device.lists as Suggestions.Ready
+        return r.copy(
+            list = r.list.copy(id = "maker:xgimi", name = "XGIMI", testedOs = null, sdk = null),
+            groups = r.groups.map { g -> g.copy(packages = g.packages.map { it.copy(ticked = false) }) },
+            byMaker = true,
+        )
+    }
+
+    @Test fun debloat_maker() = debloatMaker(dark = false)
+
+    @Test fun debloat_maker_dark() = debloatMaker(dark = true)
+
+    private fun debloatMaker(dark: Boolean) {
+        val lists = makerLists()
+        shot("18_debloat_maker", dark) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("XGIMI")) }
+        compose.onNodeWithText("XGIMI").assertExists()
+        compose.onNodeWithText("No list for this model", substring = true).assertExists()
+        compose.onNodeWithText("Nothing is ticked", substring = true).assertExists()
+        compose.onNodeWithText("tested on", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Not this TV?").assertExists()
+        compose.onNodeWithText("Disable 0 apps").assertIsNotEnabled()
+    }
+
+    @Test fun debloat_noList() = debloatNoList(dark = false)
+
+    @Test fun debloat_noList_dark() = debloatNoList(dark = true)
+
+    /** Neither model nor maker has a list: the TV's own apps, to tick by hand. */
+    private fun debloatNoList(dark: Boolean) {
+        val s = deviceState()
+        val ready = s.device.lists as Suggestions.Ready
+        val tv = s.selected!!.let { it.copy(model = "TCL 55C735", manufacturer = "TCL", hit = it.hit.copy(maker = "TCL", hostname = null)) }
+        var disabled = emptyList<String>()
+        shot("18_debloat_none", dark) {
+            DebloatScreen(Suggestions.NoList(null, ready.devices), {}, { disabled = it }, {}, tv = tv, tvApps = s.device.apps)
+        }
+        compose.onNodeWithText("TCL 55C735").assertExists()
+        compose.onNodeWithText("No list for this TV or its maker yet").assertExists()
+        compose.onNodeWithText("Not this TV?").assertExists()
+        // Protected and already-off apps aren't offered.
+        compose.onNodeWithText("System UI").assertDoesNotExist()
+        compose.onNodeWithText("TV Recommendations").assertDoesNotExist()
+        compose.onNodeWithText("Disable 0 apps").assertIsNotEnabled()
+        compose.onNodeWithText("XGIMI Assistant").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Disable 1 app").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        // The confirm still names the app before anything is turned off.
+        compose.onNodeWithText("Disable 1 app?").assertExists()
+        compose.onNodeWithText("Yes, disable them").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(listOf("com.xgimi.assistant"), disabled)
+    }
+
+    private val notThisTv = { compose.onNodeWithText("Not this TV?").performClick(); Unit }
+
+    @Test fun debloat_notThisTv() {
         val lists = deviceState().device.lists
-        val change = { compose.onNodeWithText("Change").performClick(); Unit }
-        shot("18_debloat_pick_change", before = change) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("XGIMI")) }
-        // The search starts at the TV's maker, and the match stays chosen.
+        shot("18_debloat_search", before = notThisTv) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("XGIMI")) }
+        // The search starts at the TV's maker, with nothing marked until a list is tapped.
         compose.onNodeWithText("XGIMI MoGo 2 projector").assertExists()
         compose.onNodeWithText("TCL C-series").assertDoesNotExist()
-        compose.onNodeWithText("Next").assertIsEnabled()
+        compose.onNodeWithText("Use this list").assertIsNotEnabled()
     }
 
-    @Test fun debloat_pick_brand() {
+    @Test fun debloat_searchByBrand() {
         // Philips TVs report their factory, TPV, as manufacturer; the brand finds the list.
-        val ready = deviceState().device.lists as Suggestions.Ready
-        shot("18_debloat_pick_brand") { DebloatScreen(Suggestions.Pick(null, ready.devices), {}, {}, {}, tvMakers = listOf("Philips", "TPV")) }
+        val lists = makerLists()
+        shot("18_debloat_search_brand", before = notThisTv) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("Philips", "TPV")) }
         compose.onNodeWithText("Philips 55OLED708").assertExists()
         compose.onNodeWithText("No list for", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Next").assertIsNotEnabled() // found, but not picked for them
     }
 
-    @Test fun debloat_unknownModel() {
+    @Test fun debloat_searchUnknownMaker() {
         // A maker no list names: the full list, with a line saying so, and nothing guessed.
-        val ready = deviceState().device.lists as Suggestions.Ready
-        shot("18_debloat_pick_unknown") { DebloatScreen(Suggestions.Pick(null, ready.devices), {}, {}, {}, tvMakers = listOf("TPV")) }
+        val lists = makerLists()
+        shot("18_debloat_search_unknown", before = notThisTv) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("TPV")) }
         compose.onNodeWithText("No list for \u201cTPV\u201d", substring = true).assertExists()
         compose.onNodeWithText("Chromecast with Google TV 4K").assertExists()
-        compose.onNodeWithText("Next").assertIsNotEnabled()
     }
 
     @Test fun debloat_pickByHand() {
-        val ready = deviceState().device.lists as Suggestions.Ready
-        val pick = { compose.onNodeWithText("Philips 55OLED708").performClick(); Unit }
-        shot("18_debloat_pick_manual", before = pick) { DebloatScreen(Suggestions.Pick(null, ready.devices), {}, {}, {}, tvMakers = listOf("TPV")) }
-        compose.onNodeWithText("Next").assertIsEnabled()
-    }
-
-    @Test fun debloat_review() {
-        val lists = deviceState().device.lists as Suggestions.Ready
-        val next = { compose.onNodeWithText("Next").performClick(); Unit }
-        shot("19_debloat_review", before = next) { DebloatScreen(lists, {}, {}, {}) }
-        val apps = lists.groups.flatMap { it.packages }
-        for (a in apps) compose.onNodeWithText(a.label).assertExists()
-        val ticked = apps.count { it.ticked }
-        compose.onNodeWithText("Disable $ticked ${if (ticked == 1) "app" else "apps"}").assertIsEnabled()
+        val lists = makerLists()
+        val picked = mutableListOf<String>()
+        val pick = { notThisTv(); compose.mainClock.advanceTimeBy(1_000); compose.onNodeWithText("Philips 55OLED708").performClick(); Unit }
+        shot("18_debloat_search_manual", before = pick) { DebloatScreen(lists, { picked += it }, {}, {}, tvMakers = listOf("TPV")) }
+        compose.onNodeWithText("Use this list").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(1, picked.size)
+        compose.onNodeWithText("Loading the list…").assertExists()
     }
 
     @Test fun debloat_review_otherAndroid() {
@@ -704,9 +1049,9 @@ class ScreenshotTest {
         val lists = (deviceState().device.lists as Suggestions.Ready).let { r ->
             r.copy(sdk = 28, groups = r.groups.map { g -> g.copy(packages = g.packages.map { it.copy(ticked = false) }) })
         }
-        val next = { compose.onNodeWithText("Next").performClick(); Unit }
-        shot("19_debloat_review_other_android", before = next) { DebloatScreen(lists, {}, {}, {}) }
-        compose.onNodeWithText("so nothing is ticked", substring = true).assertExists()
+        shot("19_debloat_review_other_android") { DebloatScreen(lists, {}, {}, {}) }
+        compose.onNodeWithText("not this TV's Android", substring = true).assertExists()
+        compose.onNodeWithText("Nothing is ticked", substring = true).assertExists()
         compose.onNodeWithText("Disable 0 apps").assertIsNotEnabled()
     }
 
@@ -750,16 +1095,13 @@ class ScreenshotTest {
     }
 
     @Test fun readme_debloat() {
-        val next = { compose.onNodeWithText("Next").performClick(); Unit }
-        shot("20_readme_debloat", before = next) { DebloatScreen(readmeLists(), {}, {}, {}) }
+        shot("20_readme_debloat") { DebloatScreen(readmeLists(), {}, {}, {}) }
         compose.onNodeWithText("Disable 4 apps").assertIsEnabled()
     }
 
     @Test fun readme_confirm() {
         // Over the review step, as in the app.
         val confirm = {
-            compose.onNodeWithText("Next").performClick()
-            compose.mainClock.advanceTimeBy(1_000)
             compose.onNodeWithText("Disable 4 apps").performClick()
             Unit
         }
@@ -816,6 +1158,71 @@ class ScreenshotTest {
         }
         shot("30_readme_home", before = { compose.onNode(hasScrollAction()).performScrollToNode(hasText("Yes, switch home screen")); Unit }) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
         compose.onNodeWithText("Yes, switch home screen").assertExists()
+    }
+
+    // Projectivy is Home now, made so on the TV itself; its row offers the way back to Google TV Home, which is off.
+    private fun homeBackState(confirming: Boolean = false) = deviceState {
+        val stock = AppInfo("com.google.android.tvlauncher", "Google TV Home", 0xFF1A73E8, true, false, null, "1.0.4")
+        val projectivy = { a: AppInfo -> a.copy(protectedReason = "this is your home screen", system = false, removable = true, homeBack = stock.label) }
+        copy(
+            apps = listOf(stock) + apps.map { if (it.packageName == "com.spocky.projengmenu") projectivy(it) else it },
+            pending = ("com.spocky.projengmenu" to Action.HomeBack).takeIf { confirming },
+        )
+    }
+    private fun homeBack(dark: Boolean) {
+        val back = { compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.confirm(Action.HomeBack))); Unit }
+        shot("78_apps_home_back", dark, before = back) { DeviceTabsScreen(homeBackState(confirming = true), DeviceActions(), startTab = TvTab.Apps) }
+        compose.onNodeWithText(Copy.explainHomeBack("Projectivy Launcher", "Google TV Home")).assertExists()
+    }
+    @Test fun apps_homeBack() = homeBack(false)
+    @Test fun apps_homeBack_dark() = homeBack(true)
+
+    @Test fun apps_homeBackIsOfferedOnTheAddedLauncher() {
+        val proposed = mutableListOf<Pair<String, Action>>()
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(homeBackState(), DeviceActions(propose = { pkg, a -> proposed += pkg to a }), startTab = TvTab.Apps) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Projectivy Launcher"))
+        compose.onNodeWithText("Projectivy Launcher").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.homeBack("Google TV Home")))
+        compose.onNodeWithText(Copy.homeBack("Google TV Home")).performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(listOf("com.spocky.projengmenu" to Action.HomeBack), proposed)
+        // Still the home screen, so nothing that would turn it off.
+        compose.onAllNodesWithText("Disable").assertCountEquals(0)
+    }
+
+    // A keep from the TV's list only warns; a hard lock still offers nothing.
+    // Tall enough that Built-in's protected rows are on screen under the pinned buttons and search field:
+    // scrolling by text to a row not yet laid out, with the clock held, runs out of memory.
+    @Config(qualifiers = "w411dp-h1100dp-xxhdpi")
+    @Test fun apps_listKeepWarnsAndHardLockHolds() {
+        val proposed = mutableListOf<Pair<String, Action>>()
+        val kept = deviceState { copy(apps = apps.map { if (it.packageName == "com.xgimi.assistant") it.copy(listKeep = true) else it }) }
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(kept, DeviceActions(propose = { pkg, a -> proposed += pkg to a }), startTab = TvTab.Apps) } }
+        compose.mainClock.advanceTimeBy(1_000)
+        val tap = { label: String ->
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText(label))
+            compose.onNodeWithText(label).performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+        }
+        tap("Built-in"); tap("XGIMI Assistant"); tap("Disable")
+        assertEquals(listOf("com.xgimi.assistant" to Action.Disable), proposed)
+        tap("Google Play services")
+        compose.onAllNodesWithText("Disable").assertCountEquals(1) // XGIMI Assistant's, still open
+        assertEquals(1, proposed.size)
+    }
+
+    @Test fun apps_listKeepConfirmSaysSo() {
+        val state = deviceState {
+            copy(apps = apps.map { if (it.packageName == "com.xgimi.assistant") it.copy(listKeep = true) else it }, pending = "com.xgimi.assistant" to Action.Disable)
+        }
+        shot("79_apps_keep_warning", before = { compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.confirm(Action.Disable))); Unit }) {
+            DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps)
+        }
+        compose.onNodeWithText(Copy.KEEP_WARNING, substring = true).assertExists()
     }
 
     @Test fun readme_send() = shot("25_readme_send", screen = true) {

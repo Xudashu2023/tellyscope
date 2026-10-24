@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import app.tellyscope.adb.ActionResult
 import app.tellyscope.adb.ApkInfo
 import app.tellyscope.adb.Files
+import app.tellyscope.adb.HomeOptions
 import app.tellyscope.adb.HomeResult
 import app.tellyscope.adb.InstallResult
 import app.tellyscope.adb.Progress
@@ -41,7 +42,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
@@ -313,6 +316,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         // Same key as history: a placeholder serial must not give two boxes one cache.
         val names = appNames.names(key(deviceId), listed, LabelHelper(shell, helperDex)::describe)
         val keep = keep[key(deviceId)].orEmpty()
+        // On a launcher the user added, offer the way back to the one it replaced.
+        val back = homeOptions?.current?.takeIf { it !in system }
+            ?.let { homeBackTarget(it, book.entries(key(deviceId)), builtIns(system, disabled, homeOptions)) }
         return listed.map { p ->
             val name = names.getValue(p.name)
             labels[p.name] = name.label
@@ -323,19 +329,19 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 system = p.name in system,
                 enabled = p.name !in disabled,
                 // Same rule as Actions.run: no known launcher, nothing can be stopped or disabled.
-                // A disabled app stays unprotected so Enable (always allowed) still shows.
-                protectedReason = withKeep(
-                    when {
-                        home.isNotEmpty() -> Protected.reason(p.name, home)
-                        p.name in disabled -> null
-                        else -> ProtectedReason.UNKNOWN_HOME
-                    }?.let(::reasonText),
-                    p.name, enabled = p.name !in disabled, keep,
-                ),
+                // A disabled app stays unprotected so Enable (always allowed) still shows, even
+                // for a built-in launcher that is off.
+                protectedReason = when {
+                    p.name in disabled -> null
+                    home.isNotEmpty() -> Protected.reason(p.name, home)
+                    else -> ProtectedReason.UNKNOWN_HOME
+                }?.let(::reasonText),
                 version = "",
                 icon = name.icon,
-                removable = p.name in userInstalled && p.name !in keep,
-                homeInstead = homeOptions?.takeIf { p.name in it.others && it.current !in keep }?.current,
+                removable = p.name in userInstalled,
+                homeInstead = homeOptions?.takeIf { p.name in it.others }?.current,
+                homeBack = back?.takeIf { p.name == homeOptions?.current }?.let { names[it.pkg]?.label ?: AppNames.fallback(it.pkg) },
+                listKeep = p.name in keep,
             )
         }.sortedBy { it.label.lowercase() }
     }
@@ -380,13 +386,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         // Before the first change on a TV, note what was already off: Restore must leave those alone.
         val key = key(deviceId)
         if (!book.hasBaseline(key)) book.setBaseline(key, disabledPackages(deviceId))
-        // The list's keep entries add to the built-in protection in Actions.run; look it up if not yet.
-        if (action == Action.Stop || action == Action.Disable || action == Action.Uninstall) {
-            if (keepRefuses(action, packageName, keep[key] ?: resolve(deviceId).list?.keep.orEmpty())) {
-                throw IllegalStateException(KEEP_REASON)
-            }
-        }
+        // The list's keep entries only warn, in the confirm; Actions.run holds the hard locks.
         if (action == Action.Home) return makeHome(deviceId, packageName, undoing)
+        if (action == Action.HomeBack) return homeBack(deviceId, packageName, undoing)
         val r = Actions(shell).run(AdbAction.valueOf(action.name.uppercase()), packageName)
         return when (r) {
             is ActionResult.Done -> {
@@ -411,10 +413,6 @@ class AdbDeviceSource(context: Context) : DeviceSource {
 
     private suspend fun makeHome(deviceId: String, packageName: String, undoing: Long?): HistoryEntry {
         val key = key(deviceId)
-        val old = Actions(session(deviceId)).homeOptions()?.current
-        if (old != null && keepRefuses(Action.Disable, old, keep[key] ?: resolve(deviceId).list?.keep.orEmpty())) {
-            throw IllegalStateException(KEEP_REASON)
-        }
         return when (val r = Actions(session(deviceId)).makeHome(packageName)) {
             is HomeResult.Switched -> book.record(
                 deviceId = key,
@@ -431,6 +429,44 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         }
     }
 
+    /**
+     * Makes Home again the launcher that [added], now Home, replaced: the one the last switch saved,
+     * else the TV's own. [added] stays on; the entry's undo makes it Home again.
+     */
+    private suspend fun homeBack(deviceId: String, added: String, undoing: Long?): HistoryEntry {
+        val key = key(deviceId)
+        val shell = session(deviceId)
+        val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
+        val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
+        val options = Actions(shell).homeOptions()
+        val target = options?.current?.takeIf { it == added && it !in system }
+            ?.let { homeBackTarget(it, book.entries(key), builtIns(system, disabled, options)) }
+            ?: throw IllegalStateException("there's no home screen to switch back to")
+        return when (val r = Actions(shell).homeBack(target.pkg, target.activity)) {
+            is HomeResult.Switched -> book.record(
+                deviceId = key,
+                at = System.currentTimeMillis(),
+                action = Action.HomeBack,
+                packageName = added,
+                label = labels[target.pkg] ?: AppNames.fallback(target.pkg),
+                undo = Action.Home,
+                // The switch away from it is reversed now, so Restore leaves it alone.
+                undoing = undoing ?: target.reverses,
+                previous = mapOf("from" to r.from, "to" to r.to),
+            )
+            is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
+            is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+        }
+    }
+
+    /**
+     * The TV's own launchers, the ones to go back to: those that are on, then any that are off
+     * and named as one (an off app answers no Home query).
+     */
+    private fun builtIns(system: Set<String>, disabled: Set<String>, options: HomeOptions): List<String> =
+        (options.others.filter { it in system }.sorted() +
+            disabled.filter { it in system && Protected.reason(it) == ProtectedReason.HOME_SCREEN }.sorted()).distinct()
+
     override suspend fun history(deviceId: String): List<HistoryEntry> = book.entries(key(deviceId))
 
     override suspend fun restoreAll(deviceId: String): List<HistoryEntry> {
@@ -446,9 +482,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val r = resolve(deviceId)
         when {
             r.index == null -> Suggestions.Unavailable
-            r.entry == null -> Suggestions.Pick(r.index.commit, r.index.devices)
+            r.match == ListMatch.None -> Suggestions.NoList(r.index.commit, r.index.devices)
             r.list == null -> Suggestions.Unavailable
-            else -> Suggestions.Ready(r.index.commit, r.list, r.sdk, suggest(r.list, apps(deviceId), r.sdk), r.index.devices)
+            else -> Suggestions.Ready(
+                r.index.commit, r.list, r.sdk, suggest(r.list, apps(deviceId), r.sdk), r.index.devices,
+                byMaker = r.match is ListMatch.Maker,
+            )
         }
     } catch (e: CancellationException) {
         throw e
@@ -473,9 +512,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         }
     }
 
-    private class Resolved(val index: ListIndex?, val entry: ListEntry?, val list: DeviceList?, val sdk: Int?)
+    private class Resolved(val index: ListIndex?, val match: ListMatch?, val list: DeviceList?, val sdk: Int?)
 
-    /** This TV's list (picked, else matched), with its keep entries recorded for [apps] and [act]. */
+    /** This TV's list (picked, else matched, else its maker's), with its keep entries recorded for [apps] and [act]. */
     private suspend fun resolve(deviceId: String): Resolved {
         val index = lists.index() ?: return Resolved(null, null, null, null)
         val out = session(deviceId).shell(
@@ -483,10 +522,16 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         ).output.lines().map { it.trim().ifEmpty { null } }
         val props = MATCH_KEYS.withIndex().associate { (i, k) -> k to out.getOrNull(i) }
         val key = key(deviceId)
-        val entry = lists.entryFor(index, key, props)
-        val list = entry?.let { lists.list(it) }
+        val match = lists.find(index, key, props)
+        val list = when (match) {
+            is ListMatch.Model -> lists.list(match.entry)
+            // Fetched together, as a maker can have dozens. A list that fails its checksum is left out; the rest still count.
+            is ListMatch.Maker -> coroutineScope { match.entries.map { async { lists.list(it) } }.awaitAll() }
+                .filterNotNull().ifEmpty { null }?.let { merge(match.maker, it) }
+            ListMatch.None -> null
+        }
         keep[key] = list?.keep.orEmpty()
-        return Resolved(index, entry, list, out.getOrNull(MATCH_KEYS.size)?.toIntOrNull())
+        return Resolved(index, match, list, out.getOrNull(MATCH_KEYS.size)?.toIntOrNull())
     }
 
     override suspend fun press(deviceId: String, key: RemoteKey) = Remote(session(deviceId)).press(key)
