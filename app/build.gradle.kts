@@ -21,8 +21,8 @@ android {
         minSdk = 26
         targetSdk = 37
         // A PR into main must raise both past the latest v* tag (.github/workflows/release-check.yml).
-        versionCode = 12
-        versionName = "0.7.0"
+        versionCode = 13
+        versionName = "0.8.0"
 
         // An alpha tag (release.yml, vX.Y.Z-alpha.N on dev) passes -Ptellyscope.alpha=N:
         // a separate app ID, so it installs next to the release.
@@ -71,6 +71,9 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // The helpers' pure parts (BannerColors) are unit-tested like app code.
+    sourceSets["test"].java.srcDir("src/helper/java")
 
     testOptions {
         // Robolectric renders the screenshot tests (see ScreenshotTest).

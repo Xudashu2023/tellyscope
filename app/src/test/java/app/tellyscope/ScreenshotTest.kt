@@ -35,14 +35,17 @@ import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import app.tellyscope.adb.ApkInfo
+import app.tellyscope.adb.AppFacts
 import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.InstallRefusal
 import app.tellyscope.adb.InstalledVersion
 import app.tellyscope.adb.Progress
+import app.tellyscope.adb.Reports
 import app.tellyscope.adb.TvFile
 import app.tellyscope.adb.TvFolder
 import app.tellyscope.data.Action
 import app.tellyscope.data.AppInfo
+import app.tellyscope.data.Docked
 import app.tellyscope.data.AppNames
 import app.tellyscope.data.Device
 import app.tellyscope.data.DeviceState
@@ -59,6 +62,7 @@ import app.tellyscope.data.Suggested
 import app.tellyscope.data.SuggestedGroup
 import app.tellyscope.data.Proc
 import app.tellyscope.data.Suggestions
+import app.tellyscope.ui.AboutDialog
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.AppsTab
 import app.tellyscope.ui.ConnectScreen
@@ -88,6 +92,10 @@ import app.tellyscope.ui.SideloadUi
 import app.tellyscope.ui.TransferUi
 import app.tellyscope.ui.brands
 import app.tellyscope.ui.name
+import app.tellyscope.ui.AddRestScreen
+import app.tellyscope.ui.ReportKind
+import app.tellyscope.ui.ReportScreen
+import app.tellyscope.ui.ReportUi
 import app.tellyscope.ui.SettingsScreen
 import app.tellyscope.data.RELEASES
 import androidx.compose.ui.platform.UriHandler
@@ -902,6 +910,8 @@ class ScreenshotTest {
 
     @Test fun forget() = shot("09_forget", screen = true) { ForgetDialog("xgimi-projector", {}, {}) }
 
+    @Test fun about() = shot("83_about", screen = true) { AboutDialog("4f1c2a9e7b3d5c60", {}, version = "0.8.0-alpha.2") }
+
     @Test fun scan_offWifi() = scan(
         ScanUi(scanning = false, noLan = true, hits = listOf(chromecast), rows = mapOf(chromecast.ip to RowState.Found)),
         name = "10_scan_off_wifi",
@@ -921,13 +931,81 @@ class ScreenshotTest {
 
     @Test fun restore() = shot("11_restore", screen = true) { RestoreDialog(2, {}, {}) }
 
-    @Test fun remote() = shot("12_remote") { RemoteScreen(deviceState(), RemoteActions()) }
+    private val docked = listOf(Docked("com.google.android.youtube.tv", "YouTube"), Docked("com.netflix.ninja", "Netflix"))
 
-    @Test fun remote_dark() = shot("12_remote", dark = true) { RemoteScreen(deviceState(), RemoteActions()) }
+    private fun remoteState(apps: List<Docked> = docked, restart: Restart? = null) =
+        deviceState { copy(dock = apps) }.let { s -> restart?.let { s.copy(restarting = mapOf(s.selectedId!! to it)) } ?: s }
 
-    @Test fun remote_restarting() {
-        val state = deviceState().let { it.copy(restarting = mapOf(it.selectedId!! to Restart(now - 25_000, down = true))) }
-        shot("13_remote_restarting") { RemoteScreen(state, RemoteActions()) }
+    @Test fun remote() = shot("12_remote") { RemoteScreen(remoteState(), RemoteActions()) }
+
+    @Test fun remote_dark() = shot("12_remote", dark = true) { RemoteScreen(remoteState(), RemoteActions()) }
+
+    /**
+     * The apps' own icons, for the README's Remote shot only. Test resources, so they never reach the
+     * APK; the names and logos belong to their owners (see NOTICE).
+     */
+    private fun realIcon(pkg: String): ByteArray? = javaClass.classLoader?.getResourceAsStream("dock-icons/$pkg.png")?.use { it.readBytes() }
+
+    @Test fun remote_dockFull() {
+        val four = docked + listOf(Docked("org.jellyfin.androidtv", "Jellyfin"), Docked("com.spotify.tv.android", "Spotify"))
+        val spotify = AppInfo("com.spotify.tv.android", "Spotify", null, false, true, null, "", launchable = true)
+        val state = deviceState { copy(dock = four, apps = (apps + spotify).map { a -> realIcon(a.packageName)?.let { a.copy(icon = it) } ?: a }) }
+        shot("12_remote_dock_full") { RemoteScreen(state, RemoteActions()) }
+        // A full row has no Add to dock.
+        compose.onNodeWithText(Copy.ADD_TO_DOCK).assertDoesNotExist()
+    }
+
+    /**
+     * Banner-only apps as letter tiles, in the colours the helper picks from their banners, beside
+     * a real square icon and an app with no icon at all: the Apps list and the dock.
+     */
+    private fun tilesState(): UiState {
+        val projectivy = "com.spocky.projengmenu"
+        val spotify = AppInfo("com.spotify.tv.android", "Spotify", 0xFF121212, false, true, null, "", removable = true, launchable = true, iconAccent = 0xFF1ED760)
+        val mine = AppInfo("com.example.myapp", "My App", null, false, true, null, "1.0", removable = true, launchable = true)
+        val s = md3State()
+        val apps = s.device.apps.map { a ->
+            when (a.packageName) {
+                projectivy -> a.copy(iconColor = 0xFF1C120D, iconAccent = 0xFFFF6A13)
+                "com.google.android.youtube.tv" -> a.copy(icon = realIcon(a.packageName))
+                else -> a
+            }
+        } + spotify + mine
+        val dock = listOf(Docked(projectivy, "Projectivy"), Docked(spotify.packageName, "Spotify"), Docked("com.google.android.youtube.tv", "YouTube"), Docked(mine.packageName, "My App"))
+        return s.copy(device = s.device.copy(apps = apps, dock = dock))
+    }
+
+    @Test fun tiles_apps() = shot("13_tiles_apps") { DeviceTabsScreen(tilesState(), DeviceActions(), startTab = TvTab.Apps) }
+
+    @Test fun tiles_apps_dark() = shot("13_tiles_apps", dark = true) { DeviceTabsScreen(tilesState(), DeviceActions(), startTab = TvTab.Apps) }
+
+    @Test fun tiles_dock() = shot("13_tiles_dock") { RemoteScreen(tilesState(), RemoteActions()) }
+
+    @Test fun tiles_dock_dark() = shot("13_tiles_dock", dark = true) { RemoteScreen(tilesState(), RemoteActions()) }
+
+    @Test fun remote_dockPicker() = shot("12_remote_dock_picker", screen = true, before = { compose.onNodeWithText(Copy.ADD_TO_DOCK).performClick() }) {
+        RemoteScreen(remoteState(), RemoteActions())
+    }
+
+    @Test fun remote_dockMenu() = shot(
+        "12_remote_dock_menu", screen = true,
+        before = { compose.onNodeWithContentDescription("Netflix").performSemanticsAction(SemanticsActions.OnLongClick) },
+    ) { RemoteScreen(remoteState(), RemoteActions()) }
+
+    @Test fun remote_restarting() = shot("13_remote_restarting", screen = true) {
+        RemoteScreen(remoteState(restart = Restart(now - 25_000, down = true)), RemoteActions())
+    }
+
+    @Test fun remote_restartHidden() = shot("13_remote_restart_hidden", before = { compose.onNodeWithText("Hide").performClick() }) {
+        RemoteScreen(remoteState(restart = Restart(now - 25_000, down = true)), RemoteActions())
+    }
+
+    @Test fun remote_restartLate() = shot("13_remote_restart_late", screen = true) {
+        RemoteScreen(remoteState(restart = Restart(now - 61_000, down = true)), RemoteActions())
+    }
+
+    @Test fun remote_restartLost() = shot("13_remote_restart_lost", screen = true) {
+        RemoteScreen(remoteState(restart = Restart(now - 130_000, down = true, waitFrom = now - 61_000, retried = true)), RemoteActions())
     }
 
     @Test fun device_restarting() {
@@ -1039,6 +1117,101 @@ class ScreenshotTest {
         shot("18_debloat_search_unknown", before = notThisTv) { DebloatScreen(lists, {}, {}, {}, tvMakers = listOf("TPV")) }
         compose.onNodeWithText("No list for \u201cTPV\u201d", substring = true).assertExists()
         compose.onNodeWithText("Chromecast with Google TV 4K").assertExists()
+    }
+
+    @Test fun debloat_helpAdd() {
+        // No list for this TV's maker, and the TV is connected: offer to send its apps to cleanyourtv.
+        val asked = mutableListOf<Unit>()
+        val tv = deviceState().selected
+        shot("85_debloat_help_add", before = notThisTv) { DebloatScreen(makerLists(), {}, {}, {}, tvMakers = listOf("TPV"), tv = tv, onHelpAdd = { asked += Unit }) }
+        compose.onNodeWithText("Not in the list? Help add this TV").assertExists()
+        compose.onNodeWithText("Help add this TV").performClick()
+        assertEquals(1, asked.size)
+    }
+
+    private val reportApp = AppFacts("0.8.0", "Pixel 8, Android 16")
+
+    private fun reportUi(kind: ReportKind, details: String = "", log: String? = null) = runBlocking {
+        ReportUi(kind, reportApp, Reports.Connection.WIRELESS_DEBUGGING, tv = fake.facts(xgimi.ip), details = details, log = log)
+    }
+
+    /** Opens the form's dropdown that still says "Choose one" and picks [option]. */
+    private fun choose(option: String) = {
+        compose.onNodeWithText("Choose one").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText(option).performClick()
+        Unit
+    }
+
+    @Test fun report_problem() = reportProblem(dark = false)
+
+    @Test fun report_problem_dark() = reportProblem(dark = true)
+
+    /** From a failed install: the TV as facts, the dropdowns, what the user wrote, then what gets sent. */
+    private fun reportProblem(dark: Boolean) {
+        val r = reportUi(
+            ReportKind.Problem, "Tried to install Kodi 21.2",
+            log = "21:04:11 Connected to Projector\n21:04:19 Install org.xbmc.kodi 21.2: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]",
+        )
+        val opened = mutableListOf<String>()
+        val links = object : UriHandler { override fun openUri(uri: String) { opened += uri } }
+        shot("86_report_problem", dark, before = choose(Reports.Outcome.MISBEHAVED.option)) {
+            CompositionLocalProvider(LocalUriHandler provides links) { ReportScreen(r, {}, {}) }
+        }
+        compose.onNodeWithText("XGIMI Horizon Pro (XK03H)").assertExists()
+        compose.onNodeWithText(Reports.Connection.WIRELESS_DEBUGGING.option).assertExists()
+        compose.onNodeWithText("Tellyscope sends nothing by itself", substring = true).assertExists()
+        compose.onNodeWithText("Open GitHub").performClick()
+        assertTrue(opened.single().startsWith("https://github.com/") && "template=device_report.yml" in opened.single())
+    }
+
+    @Test fun report_problemWaitsForWhatHappened() {
+        shot("86_report_problem_empty") { ReportScreen(reportUi(ReportKind.Problem), {}, {}) }
+        compose.onNodeWithText("Pick what happened to see the report.").assertExists()
+        compose.onNodeWithText("Open GitHub").assertIsNotEnabled()
+    }
+
+    @Test fun report_newTv() = reportNewTv(dark = false)
+
+    @Test fun report_newTv_dark() = reportNewTv(dark = true)
+
+    private fun reportNewTv(dark: Boolean) {
+        shot("87_report_new_tv", dark, before = choose(Reports.Stage.HERE_IS_MY_LIST.option)) { ReportScreen(reportUi(ReportKind.NewTv), {}, {}) }
+        compose.onNodeWithText("Help add this TV").assertExists()
+        compose.onNodeWithText("can go in a comment after you post", substring = true).assertExists()
+    }
+
+    private fun posted() = runBlocking { Reports.newTv(reportApp, fake.facts(xgimi.ip), Reports.Stage.HERE_IS_MY_LIST, "") }
+
+    @Test fun report_posted() = reportPosted(dark = false)
+
+    @Test fun report_posted_dark() = reportPosted(dark = true)
+
+    /** Back from GitHub with apps that didn't fit: the card offering to add them. */
+    private fun reportPosted(dark: Boolean) {
+        val p = posted()
+        val left = p.rest!!.lines().size - 1
+        shot("88_report_posted", dark) { ReportScreen(reportUi(ReportKind.NewTv).copy(posted = p), {}, {}) }
+        compose.onNodeWithText("Posted it? Add the rest as a comment").assertExists()
+        compose.onNodeWithText("$left apps didn\u2019t fit", substring = true).assertExists()
+        compose.onNodeWithText("Add the rest").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Copy and open your issue").assertExists()
+    }
+
+    @Test fun report_addRest() = addRest(dark = false)
+
+    @Test fun report_addRest_dark() = addRest(dark = true)
+
+    private fun addRest(dark: Boolean) {
+        val p = posted()
+        val opened = mutableListOf<String>()
+        val links = object : UriHandler { override fun openUri(uri: String) { opened += uri } }
+        var done = false
+        shot("89_report_add_rest", dark) { CompositionLocalProvider(LocalUriHandler provides links) { AddRestScreen(p, {}, { done = true }) } }
+        compose.onNodeWithText("Copy and open your issue").performClick()
+        assertEquals(listOf(p.myIssues), opened)
+        assertTrue(done)
     }
 
     @Test fun debloat_pickByHand() {

@@ -15,6 +15,7 @@ import app.tellyscope.adb.HomeResult
 import app.tellyscope.adb.InstallResult
 import app.tellyscope.adb.Progress
 import app.tellyscope.adb.Sideload
+import app.tellyscope.adb.TvFacts
 import app.tellyscope.adb.TvFile
 import app.tellyscope.adb.TvFolder
 import app.tellyscope.adb.Actions
@@ -91,6 +92,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private val pairingPorts = ConcurrentHashMap<String, Int>()
     private val book = HistoryBook(File(appContext.filesDir, "history.tsv"))
     private val names = NameBook(File(appContext.filesDir, "names.tsv"))
+    private val docks = DockBook(File(appContext.filesDir, "docks.tsv"))
     /** Last label seen per package, so history entries read like the app list. */
     private val labels = ConcurrentHashMap<String, String>()
     /** The remote's key helper on each TV, while the remote is open. */
@@ -332,6 +334,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
         val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
         val userInstalled = Parsers.packages(shell.shell("pm list packages -3").output).map { it.name }.toSet()
+        // Before Android 7 there's no asking which apps have an icon; the ones the user installed do.
+        val launchable = Actions(shell).launchable() ?: userInstalled
         // Older pm rejects --show-versioncode and prints no packages; list again without it.
         val listed = Parsers.packages(shell.shell("pm list packages --show-versioncode").output)
             .ifEmpty { Parsers.packages(shell.shell("pm list packages").output) }
@@ -347,7 +351,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             AppInfo(
                 packageName = p.name,
                 label = name.label,
-                iconColor = null,
+                iconColor = name.tileColor,
+                iconAccent = name.tileAccent,
                 system = p.name in system,
                 enabled = p.name !in disabled,
                 // Same rule as Actions.run: no known launcher, nothing can be stopped or disabled.
@@ -365,6 +370,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 homeBack = back?.takeIf { p.name == homeOptions?.current }?.let { names[it.pkg]?.label ?: AppNames.fallback(it.pkg) },
                 homeService = p.name in serviceLaunchers,
                 listKeep = p.name in keep,
+                launchable = p.name in launchable,
             )
         }.sortedBy { it.label.lowercase() }
     }
@@ -596,6 +602,19 @@ class AdbDeviceSource(context: Context) : DeviceSource {
 
     override suspend fun openUpdates(deviceId: String) = Remote(session(deviceId)).openUpdates()
 
+    override suspend fun launch(deviceId: String, packageName: String) =
+        busy(deviceId) { Actions(session(deviceId)).run(AdbAction.OPEN, packageName) is ActionResult.Done }
+
+    override suspend fun dock(deviceId: String): List<Docked> {
+        restored.await()
+        return docks[key(deviceId)]
+    }
+
+    override suspend fun setDock(deviceId: String, dock: List<Docked>) {
+        restored.await()
+        docks.set(key(deviceId), dock)
+    }
+
     override suspend fun tweaks(deviceId: String): TvTweaks {
         val t = Tweaks(session(deviceId))
         return TvSettings.tweaks(t.read(Tweak.PRIVATE_DNS), t.read(Tweak.ANIMATIONS), sdk(deviceId))
@@ -637,6 +656,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun answerRequest(deviceId: String, request: ConnectionRequest, allow: Boolean, always: Boolean) =
         ConnectionPrompt(session(deviceId)).answer(request, allow, always)
 
+    override suspend fun facts(deviceId: String) = TvFacts.read(session(deviceId))
+
     /**
      * The history key for a TV, read from it once connected and saved with it. Until it has
      * answered (offline since install) the address stands in, and that history moves over when
@@ -657,6 +678,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         if (keys.put(deviceId, key) != key) {
             book.rekey(deviceId, key)
             names.rekey(deviceId, key)
+            docks.rekey(deviceId, key)
             remember(deviceId)
         }
         return key

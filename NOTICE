@@ -26,7 +26,21 @@ The TV and HDMI (streaming stick) device icons use the path data of the
 "cleaning_services", the off-Wi-Fi screen that of "wifi_off", and the
 Apps, Files and Tweaks tabs those of "apps", "folder" and "tune", the
 Upload files button that of "upload", the empty Movies folder that of
-"movie", and the links in Settings that of "open_in_new".
+"movie", the links in Settings that of "open_in_new", and the Remote's
+restart, waiting, can't-reach and dock menu icons those of "restart_alt",
+"hourglass_top", "link_off", "swap_horiz" and "remove_circle_outline".
+Report a problem, Help add this TV and Add the rest use those of
+"bug_report", "add_to_queue" and "content_copy".
+
+--------------------------------------------------------------------------------
+Store badges in docs/badges/ (README only, not in the app)
+- "Get it on GitHub": https://github.com/Kunzisoft/Github-badge, after the
+  F-Droid badge by @flocke; License: CC BY-SA 3.0.
+- "Get it on Obtainium": https://github.com/ImranR98/Obtainium; License: GNU
+  General Public License v3.0.
+- "Get on Orion Store": https://github.com/RookieEnough/Orion-Store; License:
+  GNU General Public License v3.0.
+Each is trimmed to its edges and scaled to the same height.
 
 --------------------------------------------------------------------------------
 cleanyourtv — https://github.com/Gathin23/cleanyourtv
@@ -53,3 +67,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+App icons in app/src/test/resources/dock-icons/ (screenshot tests only, not in
+the app)
+The YouTube, Netflix, Jellyfin and Spotify names and logos belong to their
+owners. They are shown only to illustrate the Remote's dock in the README's
+screenshot.

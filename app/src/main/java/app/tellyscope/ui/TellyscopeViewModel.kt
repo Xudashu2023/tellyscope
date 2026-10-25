@@ -5,6 +5,7 @@ package app.tellyscope.ui
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.tellyscope.adb.AppFacts
 import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.InstallKind
 import app.tellyscope.adb.StatsProfile
@@ -13,6 +14,9 @@ import app.tellyscope.adb.InstalledVersion
 import app.tellyscope.adb.Progress
 import app.tellyscope.adb.Remote
 import app.tellyscope.adb.RemoteKey
+import app.tellyscope.adb.Report
+import app.tellyscope.adb.Reports
+import app.tellyscope.adb.TvFacts
 import app.tellyscope.adb.TvFile
 import app.tellyscope.adb.TvFolder
 import app.tellyscope.adb.Tweak
@@ -23,6 +27,8 @@ import app.tellyscope.data.ConnectResult
 import app.tellyscope.data.Device
 import app.tellyscope.data.DeviceSource
 import app.tellyscope.data.DeviceState
+import app.tellyscope.data.Dock
+import app.tellyscope.data.Docked
 import app.tellyscope.data.HistoryEntry
 import app.tellyscope.data.NetworkInfo
 import app.tellyscope.data.NotAnApp
@@ -51,6 +57,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /** Per-row connect state on the scan screen. */
@@ -93,6 +102,8 @@ data class DeviceUi(
     val tweaks: TvTweaks? = null,
     /** Another device asking the TV for debugging access; null when nothing is asking. */
     val request: ConnectionRequest? = null,
+    /** The Remote's app shortcuts, in order. */
+    val dock: List<Docked> = emptyList(),
 )
 
 data class SideloadUi(
@@ -111,6 +122,26 @@ data class SideloadUi(
 
     val kind: InstallKind? get() = app?.let { installKind(it.info, installed) }
 }
+
+/** Report a problem goes to Tellyscope's tracker; Help add this TV to cleanyourtv's. */
+enum class ReportKind { Problem, NewTv }
+
+/** The report screen. The form itself (dropdowns, what the user writes) lives on the screen. */
+data class ReportUi(
+    val kind: ReportKind,
+    val app: AppFacts,
+    /** How the TV is connected, or COULD_NOT_CONNECT with no TV online. */
+    val connection: Reports.Connection,
+    /** The TV, read when the screen opened; null while reading, with no TV online, or if it went away. */
+    val tv: TvFacts? = null,
+    val reading: Boolean = false,
+    /** What the entry point already knows, to start the user's details: the app that failed to install. */
+    val details: String = "",
+    /** This session's messages, then the TV's own words for a failed install. */
+    val log: String? = null,
+    /** Opened on GitHub with something cut: the screen offers to add it as a comment. */
+    val posted: Report? = null,
+)
 
 data class FilesUi(
     val folder: TvFolder = TvFolder.DOWNLOAD,
@@ -140,6 +171,8 @@ data class UiState(
     val update: Update? = null,
     /** The Apps tabs whose System section the user folded away. */
     val foldedSystem: Set<AppsTab> = emptySet(),
+    /** The report screen; null when it's closed. */
+    val report: ReportUi? = null,
 ) {
     val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
 }
@@ -147,8 +180,30 @@ data class UiState(
 /** An action that went through on [deviceId]; the snackbar offers its undo. */
 data class Done(val deviceId: String, val entry: HistoryEntry)
 
-/** A restart in progress: [down] once the TV has dropped, so its coming back can be told apart from not having left. */
-data class Restart(val since: Long, val down: Boolean = false)
+/**
+ * A restart in progress: [down] once the TV has dropped, so its coming back can be told apart from
+ * not having left. Each wait lasts [RESTART_WAIT_MS] from [waitFrom]: the first from [since], the
+ * next from each Retry.
+ */
+data class Restart(val since: Long, val down: Boolean = false, val waitFrom: Long = since, val retried: Boolean = false) {
+    enum class Phase { Waiting, Late, Lost }
+
+    /**
+     * Late once the first minute is up; Lost when a Retry's minute is up too. A TV that never
+     * dropped stays Waiting: it ignored the restart, which [RESTART_GRACE_MS] reports instead.
+     */
+    fun phase(now: Long) = when {
+        !down || now - waitFrom < RESTART_WAIT_MS -> Phase.Waiting
+        retried -> Phase.Lost
+        else -> Phase.Late
+    }
+}
+
+/** The newest messages a report's log keeps. */
+private const val LOG_LINES = 200
+
+/** Most TVs are back within this; after it the Remote asks whether to keep waiting. */
+const val RESTART_WAIT_MS = 60_000L
 
 /** [DeviceUi.busy] value while "Restore everything" runs. */
 const val RESTORING = "restore"
@@ -170,6 +225,8 @@ class TellyscopeViewModel(
     private val clock: () -> Long = System::currentTimeMillis,
     private val updates: UpdateCheck? = null,
     private val folds: FoldBook? = null,
+    /** This build and phone, for reports. */
+    private val appFacts: AppFacts = AppFacts("unknown", "unknown phone"),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(UiState(now = clock()))
@@ -182,6 +239,9 @@ class TellyscopeViewModel(
     /** One-shot snackbar lines: the TV refused, went away mid-action, or a restore or copy finished. */
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    /** This session's messages, newest last, for a report's log. Kept in memory only. */
+    private val sessionLog = ArrayDeque<String>()
 
     /** Last stats per TV, so an offline page shows where it stood instead of blanks. Lives as long as the app. */
     private val lastSnapshot = mutableMapOf<String, Snapshot>()
@@ -230,6 +290,7 @@ class TellyscopeViewModel(
             }
         }
         rescan()
+        viewModelScope.launch { notice.collect { it?.let(::log) } }
         viewModelScope.launch {
             // Off Wi-Fi a scan has nothing to sweep; start over the moment the phone joins one.
             source.lanUp().collect {
@@ -349,7 +410,8 @@ class TellyscopeViewModel(
         // History lives on the phone, so it shows (and undo is offered) even while the TV is off.
         viewModelScope.launch {
             val history = source.history(device.id)
-            _state.update { if (it.selectedId == device.id) it.copy(device = it.device.copy(history = history)) else it }
+            val dock = source.dock(device.id)
+            _state.update { if (it.selectedId == device.id) it.copy(device = it.device.copy(history = history, dock = dock)) else it }
         }
         if (device.state != DeviceState.Online) return
         liveJob = viewModelScope.launch {
@@ -367,6 +429,7 @@ class TellyscopeViewModel(
                 // Read first: update {} may run its block again, and must never call the TV.
                 val apps = source.apps(id!!)
                 updateDevice(id) { it.copy(apps = apps) }
+                pruneDock(id, apps)
                 val tweaks = source.tweaks(id)
                 updateDevice(id) { it.copy(tweaks = tweaks) }
                 loadFiles()
@@ -544,6 +607,7 @@ class TellyscopeViewModel(
             val history = source.history(id)
             updateDevice(id) { it.copy(apps = apps, busy = null, history = history) }
             if (undoing == null) _done.value = Done(id, entry)
+            if (action == Action.Uninstall) pruneDock(id, apps)
         }
     }
 
@@ -590,11 +654,44 @@ class TellyscopeViewModel(
                     runCatching { source.apps(id) }.onSuccess { apps -> updateDevice(id) { it.copy(apps = apps) } }
                 }
                 is InstallResult.Refused -> updateDevice(id) {
+                    log("Install ${app.info.packageName} ${app.info.versionName.orEmpty()}: ${r.detail ?: r.reason}")
                     it.copy(sideload = ready.copy(step = SideloadUi.Step.Failed, error = Copy.installRefused(r.reason, app.label), detail = r.detail))
                 }
             }
         }
     }
+
+    private fun log(line: String) = synchronized(sessionLog) {
+        sessionLog.addLast(SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(Date(clock())) + " " + line)
+        while (sessionLog.size > LOG_LINES) sessionLog.removeFirst()
+    }
+
+    /**
+     * Opens the report screen about the selected TV, reading it if it's online. [details] starts what
+     * the user writes; [said] is what the TV answered, added to the log.
+     */
+    fun openReport(kind: ReportKind, details: String = "", said: String? = null) {
+        val tv = _state.value.selected?.takeIf { it.state == DeviceState.Online }
+        val log = synchronized(sessionLog) { sessionLog.toList() } + listOfNotNull(said?.let { "The TV said: $it" })
+        val connection = when (tv?.hit?.kind) {
+            ScanKind.Classic -> Reports.Connection.PORT_5555
+            ScanKind.Wireless -> Reports.Connection.WIRELESS_DEBUGGING
+            null -> Reports.Connection.COULD_NOT_CONNECT
+        }
+        _state.update { it.copy(report = ReportUi(kind, appFacts, connection, reading = tv != null, details = details, log = log.joinToString("\n").ifEmpty { null })) }
+        tv ?: return
+        viewModelScope.launch {
+            val facts = try { source.facts(tv.id) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            _state.update { st -> st.copy(report = st.report?.copy(tv = facts, reading = false)) }
+        }
+    }
+
+    /** The report went to GitHub: done, unless something was cut, which the screen then offers to add. */
+    fun reportOpened(report: Report) {
+        _state.update { st -> st.copy(report = if (report.rest == null) null else st.report?.copy(posted = report)) }
+    }
+
+    fun closeReport() = _state.update { it.copy(report = null) }
 
     /** Cancel or Done on the install dialog. Not while installing: the dialog has no button then. */
     fun closeSideload() {
@@ -967,6 +1064,54 @@ class TellyscopeViewModel(
         }
     }
 
+    /** Retry once a restart runs late: the link tries the TV again, and the wait starts over for a minute. */
+    fun retryRestart() {
+        val id = _state.value.selectedId ?: return
+        _state.update { s ->
+            val r = s.restarting[id] ?: return@update s
+            s.copy(restarting = s.restarting + (id to r.copy(waitFrom = clock(), retried = true)))
+        }
+        viewModelScope.launch { source.reconnect(id) }
+    }
+
+    /** Close on "Still can't reach": stop waiting, and the Remote shows the TV as offline. */
+    fun stopWaiting() {
+        val id = _state.value.selectedId ?: return
+        _state.update { it.copy(restarting = it.restarting - id) }
+    }
+
+    /** The dock's add, swap, remove and reorder all land here, saved per TV. */
+    fun setDock(dock: List<Docked>) {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { it.copy(dock = dock) }
+        viewModelScope.launch { source.setDock(id, dock) }
+    }
+
+    /** A dock tap: opens the app on the TV, without a history entry. */
+    fun launch(app: Docked) {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            val ok = try {
+                source.launch(id, app.packageName)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _notice.value = Copy.REMOTE_LOST
+                return@launch
+            }
+            if (!ok) _notice.value = Copy.cantOpen(app.label)
+        }
+    }
+
+    /** An app uninstalled, here or on the TV itself, leaves the dock, and the snackbar says so. */
+    private suspend fun pruneDock(id: String, apps: List<AppInfo>) {
+        val (kept, gone) = Dock.prune(source.dock(id), apps)
+        if (gone.isEmpty()) return
+        source.setDock(id, kept)
+        updateDevice(id) { it.copy(dock = kept) }
+        _notice.value = Copy.leftDock(gone.map { it.label })
+    }
+
     /**
      * A restart ends when the TV is back online after dropping, or stops at a refusal. One still
      * online after [RESTART_GRACE_MS] never went down, so the TV ignored the request.
@@ -974,9 +1119,13 @@ class TellyscopeViewModel(
     private fun restarts(current: Map<String, Restart>, known: List<Device>): Map<String, Restart> {
         val now = clock()
         return current.mapNotNull { (id, r) ->
-            val state = known.firstOrNull { it.id == id }?.state ?: return@mapNotNull null
+            val device = known.firstOrNull { it.id == id } ?: return@mapNotNull null
+            val state = device.state
             when {
-                state == DeviceState.Online && r.down -> null
+                state == DeviceState.Online && r.down -> {
+                    _notice.value = Copy.backOnline(name(device))
+                    null
+                }
                 state == DeviceState.Online && now - r.since > RESTART_GRACE_MS -> {
                     _notice.value = Copy.REBOOT_IGNORED
                     null

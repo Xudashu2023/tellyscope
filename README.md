@@ -10,59 +10,46 @@ Debloat your Android TV, install apps, and browse and transfer files on it, all 
   <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/man15h/tellyscope?color=00696B&label=release" alt="Latest release"></a>
 </p>
 
-<a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-signed%20APK-00696B?style=for-the-badge&logo=android&logoColor=white" alt="Download the signed APK" height="40"></a>
+<a href="../../releases/latest"><img src="docs/badges/get-it-on-github.png" alt="Get the signed APK on GitHub" height="60"></a>
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/man15h/tellyscope"><img src="docs/badges/get-it-on-obtainium.png" alt="Get it on Obtainium" height="60"></a>
+<a href="https://rookieenough.github.io/Orion-Data/redirect.html?id=tellyscope&icon=https%3A%2F%2Fraw.githubusercontent.com%2Fman15h%2Ftellyscope%2Fmain%2Fdocs%2Flogo%2Ficon.svg"><img src="docs/badges/get-it-on-orion.png" alt="Get it on Orion Store" height="60"></a>
 
-Or get updates automatically with [Obtainium](#get-it).
-
-<img src="docs/screenshots/clean-home.jpg" alt="A TV home screen after debloating: the inputs and the user's own apps, with no ads or suggestions" width="100%">
-
-<sub>A TV after Tellyscope: only the inputs and your own apps.</sub>
+[![Watch the demo](docs/site/demo-thumb.webp)](https://youtu.be/N_PeDw5GiCc)
 
 <table>
   <tr>
-    <td width="25%"><img src="docs/screenshots/welcome.png" alt="Welcome to Tellyscope: the three setup steps, with Skip and Continue"></td>
-    <td width="25%"><img src="docs/screenshots/add-tv.png" alt="Add your TV: brand chips, the setup steps ticked off, and two TVs found with Connect"></td>
-    <td width="25%"><img src="docs/screenshots/connect.png" alt="Allow on your TV: this phone's key, and a drawing of the TV's Allow box with the same key"></td>
     <td width="25%"><img src="docs/screenshots/tv-page.png" alt="A TV's page: the TV at a glance, its vitals, and the Install, Debloat and Send buttons"></td>
+    <td width="25%"><img src="docs/screenshots/remote.png" alt="The Remote: a D-pad, Back and Home, a dock of four TV apps, volume, Play/Pause and typing on the TV"></td>
+    <td width="25%"><img src="docs/screenshots/debloat.png" alt="Debloat: the TV's model on top, then the apps it will turn off, each with its package name"></td>
+    <td width="25%"><img src="docs/screenshots/install.png" alt="Updating Netflix on the TV from an APK on the phone"></td>
   </tr>
   <tr>
-    <td align="center"><sub>A short welcome on first launch</sub></td>
-    <td align="center"><sub>Add your TV step by step</sub></td>
-    <td align="center"><sub>Check the key, then Allow</sub></td>
     <td align="center"><sub>Your TV at a glance</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/debloat.png" alt="Debloat: the TV's model on top, then the apps it will turn off, each with its package name"></td>
-    <td><img src="docs/screenshots/history.png" alt="History: every change with an Undo, and Restore everything"></td>
-    <td><img src="docs/screenshots/install.png" alt="Updating Netflix on the TV from an APK on the phone"></td>
-    <td><img src="docs/screenshots/send.png" alt="Sending a video from the phone to the TV's Movies folder"></td>
-  </tr>
-  <tr>
+    <td align="center"><sub>Control the TV, dock your apps</sub></td>
     <td align="center"><sub>Review every app Debloat turns off</sub></td>
-    <td align="center"><sub>Undo anything from History</sub></td>
     <td align="center"><sub>Install or update apps</sub></td>
-    <td align="center"><sub>Send files to the TV</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/files.png" alt="Files on the TV: the Download folder, each file one tap from the phone"></td>
+    <td><img src="docs/screenshots/send.png" alt="Sending a video from the phone to the TV's Movies folder"></td>
     <td><img src="docs/screenshots/tweaks.png" alt="TV tweaks: ad-blocking Private DNS on, faster animations, clear caches and screenshot"></td>
-    <td><img src="docs/screenshots/request.png" alt="Another device wants to control this TV: the key fingerprint, with Deny and Allow"></td>
     <td><img src="docs/screenshots/home.png" alt="Making Projectivy Launcher the home screen: the confirm names both launchers"></td>
+    <td><img src="docs/screenshots/move.png" alt="A preview of Move to a new TV: the review step lists the apps to turn off and the settings to copy, before anything changes"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Browse and save the TV's files</sub></td>
+    <td align="center"><sub>Send files to the TV</sub></td>
     <td align="center"><sub>Block ads and tweak the TV</sub></td>
-    <td align="center"><sub>Answer connection requests</sub></td>
-    <td align="center"><sub>Switch the home screen</sub></td>
+    <td align="center"><sub>Set default launcher</sub></td>
+    <td align="center"><sub>Move your setup to a new TV (coming in 0.9)</sub></td>
   </tr>
 </table>
 
-<sub>Rendered from the app's screenshot tests with sample data.</sub>
+<sub>Rendered from the app's screenshot tests with sample data, except the 0.9 preview.</sub>
 
 ## Get it
 
 - **GitHub Releases.** Download `Tellyscope-<version>.apk` from the [latest release](../../releases/latest) and open it on your phone. You may need to allow installs from your browser or file manager first. Pre-releases marked `-alpha` are test builds: they install as a separate app next to the regular one, with the same name and icon.
-- **Obtainium.** To get updates automatically, add this repository's GitHub address in [Obtainium](https://github.com/ImranR98/Obtainium). Turn on **Include prereleases** only if you want the alpha builds.
+- **Obtainium.** To get updates automatically, tap the Obtainium badge above on your phone, or add this repository's GitHub address in [Obtainium](https://github.com/ImranR98/Obtainium). Turn on **Include prereleases** only if you want the alpha builds.
+- **Orion Store.** Tellyscope is in the [Orion Store](https://github.com/RookieEnough/Orion-Store) catalog: tap the Orion Store badge above on your phone, or search for Tellyscope in the app. Orion installs it from this project's GitHub releases and tells you when there's an update.
 
 Tellyscope needs a phone on Android 8.0 or newer, on the same Wi-Fi as the TV, and a TV with developer options turned on ([how](#setting-up-your-tv)).
 
@@ -87,11 +74,17 @@ Tellyscope is a phone app that talks to your Android TV, Google TV or Fire TV ov
 - **Apps.** Every app on the TV with its real name and icon, under three buttons: **Running** (what's using memory now), **Installed** (only the apps you put on the TV) and **Built-in** (what came with it). The buttons stay pinned under the bar as you scroll. Stop, disable or turn back on any app that isn't protected; each button says what it will do and asks first. Apps you installed yourself also offer **Uninstall**, which asks in a dialog that names the app and says it can't be undone. On Running and Built-in, the protected apps sit last under **System**, which folds away with a tap and stays folded until you open it again. **Search apps** sits under the buttons and pins with them. Tap it and the field moves to the top, the TV and the buttons step aside, and every matching app shows in one list. ← or Back brings them back.
 - **Another home screen.** With a second launcher such as Projectivy installed, its row in Apps offers **Set as default launcher**. Tellyscope makes it Home, checks that Home really opens it, and only then disables the old launcher, so the TV can't switch back by itself. The one exception: a stock launcher that outranks the rest, e.g. Android TV Home, is turned off first and turned back on if Home still doesn't open the new one. One Undo in History turns the old launcher back on and makes it Home again. Later, the new launcher's row offers **Switch home back to** the one it replaced, or the TV's own if there was no switch: it's turned back on if it's off and made Home, and the added launcher stays, free to uninstall. For a launcher that keeps Home with its own accessibility service, such as Projectivy (the ones marked in [`launchers.json`](app/src/main/assets/launchers.json)), Set as default also turns that service on, after the confirm says so, for TVs whose Home button opens their own launcher whatever the default is. Undo and Switch home back turn it off again, and any other accessibility services stay as they were. Settings and other apps that only answer Home as a fallback are never offered as launchers. On Google TV, the Apps row and the Live tab are part of the old launcher and go with it.
 - **Debloat.** It finds your TV among 230+ tested clean-up lists (adapted from [cleanyourtv](https://github.com/Gathin23/cleanyourtv)) and opens on every app it will turn off, with the model on top. With no list for the model, it shows apps from the maker's other lists, none ticked. With none for the maker either, you tick the TV's own apps by hand; the ones it needs aren't shown. **Not this TV?** searches every list. Your pick is remembered, and the TV's page then says how many of the list's apps are still on. Apps are pre-ticked only when the TV runs the Android version the list was tested on; untick anything you use, and you confirm before anything is disabled. If you'd rather not trust our lists, point the app at your own fork of them under **Advanced** in Settings (see [CONTRIBUTING](CONTRIBUTING.md#using-your-own-lists)).
+
+  <img src="docs/screenshots/clean-home.jpg" alt="A TV home screen after debloating: the inputs and the user's own apps, with no ads or suggestions" width="100%">
+
+  <sub>A TV after Tellyscope.</sub>
+
 - **History.** Every change is listed with an Undo, and **Restore everything** turns back on what Tellyscope turned off. Undoing a **Turn on** asks first, since it disables the app again. History is kept per TV, across restarts.
 - **Install apps.** Pick an APK, several split APKs or an `.apks`/`.xapk`/`.apkm` bundle on your phone. Before installing, Tellyscope shows the app's name, version and size and says whether it's new, an update, a reinstall or an older version. It won't install an older version over a newer one unless you tick the box. If the TV refuses, you get the reason in plain words.
 - **TV tweaks.** **Block ads with Private DNS** sends the TV's address lookups to an ad-blocking DNS provider (AdGuard by default, or any other you type in). Tellyscope then checks the TV can still look addresses up, and puts the old setting back if not. It needs Android 9 or newer. **Faster animations** makes menus move at twice the speed. Both land in History with an Undo. **Clear caches** frees space by clearing every app's temporary files; app data and sign-ins stay. **Take screenshot** saves what the TV shows to your phone.
 - **Connection requests.** When another device asks to debug the TV, Tellyscope shows the TV's "Allow debugging?" prompt on your phone, with the device's key fingerprint, so you can **Allow** or **Deny** it without the remote. **Always allow this device** appears when the TV's own prompt offers it.
 - **Files.** Send a file from your phone into the TV's Download or Movies folder, or save one from there to your phone. Two buttons under the TV pick the folder, and stay pinned under the bar as you scroll. An empty folder says so in the middle of the page. A file with the same name gets a " (1)" instead of being overwritten, and a cancelled copy leaves nothing half-written behind.
+- **Remote.** A D-pad, Back, Home, volume, Play/Pause and typing on the TV. **Add to dock** puts up to four of the TV's apps under Back and Home, each one tap from opening on the TV. Long-press one to change or remove it, or keep holding and move it to reorder. An app uninstalled from the TV leaves the dock by itself, and a snackbar says so. The restart button in the top bar asks first, then waits for the TV to come back: **Hide** keeps the wait in the top bar, and after a minute **Retry** waits another one.
 
 ## Setting up your TV
 
