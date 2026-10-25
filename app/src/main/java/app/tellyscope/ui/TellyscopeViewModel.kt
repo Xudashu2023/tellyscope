@@ -30,6 +30,7 @@ import app.tellyscope.data.DeviceState
 import app.tellyscope.data.Dock
 import app.tellyscope.data.Docked
 import app.tellyscope.data.HistoryEntry
+import app.tellyscope.data.KeyHaptics
 import app.tellyscope.data.NetworkInfo
 import app.tellyscope.data.NotAnApp
 import app.tellyscope.data.PhoneStorage
@@ -169,6 +170,8 @@ data class UiState(
     val alphaBuild: Boolean = false,
     /** A newer release to offer; cleared once the user answers. */
     val update: Update? = null,
+    /** A Remote key press vibrates. */
+    val keyHaptics: Boolean = true,
     /** The Apps tabs whose System section the user folded away. */
     val foldedSystem: Set<AppsTab> = emptySet(),
     /** The report screen; null when it's closed. */
@@ -225,6 +228,7 @@ class TellyscopeViewModel(
     private val clock: () -> Long = System::currentTimeMillis,
     private val updates: UpdateCheck? = null,
     private val folds: FoldBook? = null,
+    private val keyHaptics: KeyHaptics? = null,
     /** This build and phone, for reports. */
     private val appFacts: AppFacts = AppFacts("unknown", "unknown phone"),
 ) : ViewModel() {
@@ -282,6 +286,9 @@ class TellyscopeViewModel(
         }
         updates?.let { u ->
             viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(checkUpdates = u.enabled, alphaBuild = u.alpha) } }
+        }
+        keyHaptics?.let { k ->
+            viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(keyHaptics = k.on) } }
         }
         folds?.let { f ->
             viewModelScope.launch(Dispatchers.IO) {
@@ -968,6 +975,11 @@ class TellyscopeViewModel(
         val u = updates ?: return
         _state.update { it.copy(checkUpdates = on) }
         viewModelScope.launch(Dispatchers.IO) { u.enabled = on }
+    }
+
+    fun setKeyHaptics(on: Boolean) {
+        _state.update { it.copy(keyHaptics = on) }
+        viewModelScope.launch(Dispatchers.IO) { keyHaptics?.on = on }
     }
 
     /** Disables the ticked suggestions one by one, each recorded in History with its own undo. */

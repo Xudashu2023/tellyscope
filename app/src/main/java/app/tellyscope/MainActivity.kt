@@ -43,6 +43,7 @@ import app.tellyscope.data.AdbDeviceSource
 import app.tellyscope.data.AndroidPhoneStorage
 import app.tellyscope.data.FakeDeviceSource
 import app.tellyscope.data.FoldBook
+import app.tellyscope.data.KeyHaptics
 import app.tellyscope.data.UpdateCheck
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.Copy
@@ -98,6 +99,7 @@ class MainActivity : ComponentActivity() {
                                         AndroidPhoneStorage(applicationContext),
                                         updates = if (scenario != null) null else updateCheck(),
                                         folds = FoldBook(File(filesDir, "folds.properties")),
+                                        keyHaptics = KeyHaptics(File(filesDir, "remote.properties")),
                                         appFacts = AppFacts(installedVersion(), "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}"),
                                     )
                                 }
@@ -238,6 +240,8 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             checkUpdates = state.checkUpdates,
             alphaBuild = state.alphaBuild,
             onCheckUpdates = vm::setCheckUpdates,
+            keyHaptics = state.keyHaptics,
+            onKeyHaptics = vm::setKeyHaptics,
             onReport = { vm.openReport(ReportKind.Problem) },
             back = { settings = false },
             snackbar = snackbar,

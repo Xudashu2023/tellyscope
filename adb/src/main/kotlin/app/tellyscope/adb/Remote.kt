@@ -15,6 +15,7 @@ enum class RemoteKey(val code: Int, val repeats: Boolean = false) {
     OK(23),
     BACK(4),
     HOME(3),
+    MENU(82),
     PLAY_PAUSE(85),
     VOLUME_UP(24, repeats = true),
     VOLUME_DOWN(25, repeats = true),
