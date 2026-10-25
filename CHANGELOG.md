@@ -12,16 +12,15 @@ until this file has a section for its version.
 
 ## Unreleased
 
-- **New:** Get Tellyscope from Orion Store or Obtainium, with badges in the README. [#123](../../pull/123)
-
 ## 0.8.0 — 2026-10-25
 
 - **New:** Report a problem or help add your TV: GitHub opens with the report filled in. [#127](../../pull/127)
 - **New:** About shows the app's version and its GitHub page. [#125](../../pull/125)
 - **New:** Dock up to four apps on the Remote, one tap to open. [#120](../../pull/120)
+- **New:** The Remote has icon keys like Google TV's phone remote, with Menu. [#132](../../pull/132)
+- **New:** Get Tellyscope from Orion Store or Obtainium, with badges in the README. [#123](../../pull/123)
 - **Improved:** TV-only apps get a clear letter tile in their banner's colours. [#131](../../pull/131)
 - **Improved:** Restart TV sits in the Remote's top bar and waits with you. [#120](../../pull/120)
-- **New:** The Remote has icon keys like Google TV's phone remote, with Menu. [#132](../../pull/132)
 - **Improved:** Sleep leaves the Remote, making room for the dock. [#120](../../pull/120)
 - **Fixed:** Menus and the TV header no longer turn purple without dynamic colour. [#119](../../pull/119)
 
