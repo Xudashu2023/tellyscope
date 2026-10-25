@@ -940,6 +940,16 @@ class ScreenshotTest {
 
     @Test fun remote_dark() = shot("12_remote", dark = true) { RemoteScreen(remoteState(), RemoteActions()) }
 
+    @Test fun remoteKeysAreIconsWithSpokenNames() {
+        compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(remoteState(), RemoteActions()) } }
+        listOf("OK", "Back", "Home", "Menu", "Mute or unmute", "Volume down", "Volume up").forEach {
+            compose.onNodeWithContentDescription(it).assertExists()
+        }
+        // Play/Pause went: the D-pad's centre pauses a video.
+        compose.onNodeWithContentDescription("Play or pause").assertDoesNotExist()
+        compose.onNodeWithText("OK").assertDoesNotExist()
+    }
+
     /**
      * The apps' own icons, for the README's Remote shot only. Test resources, so they never reach the
      * APK; the names and logos belong to their owners (see NOTICE).

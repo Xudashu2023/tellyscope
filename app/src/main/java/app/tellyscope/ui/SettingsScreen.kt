@@ -80,6 +80,8 @@ fun SettingsScreen(
     alphaBuild: Boolean,
     onCheckUpdates: (Boolean) -> Unit,
     back: () -> Unit,
+    keyHaptics: Boolean = true,
+    onKeyHaptics: (Boolean) -> Unit = {},
     onReport: () -> Unit = {},
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
 ) {
@@ -124,6 +126,20 @@ fun SettingsScreen(
                         Switch(checked = checkUpdates, onCheckedChange = null)
                     }
                     if (checkUpdates != null) HorizontalDivider(color = MaterialTheme.colorScheme.surface)
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .toggleable(keyHaptics, role = Role.Switch, onValueChange = onKeyHaptics)
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Vibrate on key press", style = MaterialTheme.typography.titleSmall)
+                            Text("A short tick for each key on the Remote.", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Switch(checked = keyHaptics, onCheckedChange = null)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surface)
                     Row(Modifier.fillMaxWidth().clickable(onClick = onReport).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(16.dp))
