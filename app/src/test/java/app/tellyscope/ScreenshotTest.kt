@@ -615,6 +615,8 @@ class ScreenshotTest {
         for (t in listOf("Install app", "Debloat", "Send file")) compose.onNodeWithText(t).assertIsEnabled()
         for (t in listOf("Internal storage", "Network", "Suggested for this TV", "Check for updates")) compose.onNodeWithText(t).assertExists()
         compose.onNodeWithText("Updated ", substring = true).assertExists()
+        // The Remote is the page's FAB, no longer a button in the top bar.
+        compose.onNodeWithText("Remote", useUnmergedTree = true).assertExists()
     }
 
     @Test fun device_overview_dark() = shot("04_device", dark = true) { DeviceTabsScreen(deviceState(), DeviceActions()) }
@@ -638,6 +640,8 @@ class ScreenshotTest {
         compose.onNodeWithText("Internal storage").assertExists()
         compose.onAllNodesWithText("\u2014").assertCountEquals(4)
         compose.onNodeWithText("Updated ", substring = true).assertExists()
+        // No Remote while the TV is away.
+        compose.onNodeWithText("Remote", useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test fun device_storageFull() {
@@ -1176,7 +1180,7 @@ class ScreenshotTest {
     private fun homeBack(dark: Boolean) {
         val back = { compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.confirm(Action.HomeBack))); Unit }
         shot("78_apps_home_back", dark, before = back) { DeviceTabsScreen(homeBackState(confirming = true), DeviceActions(), startTab = TvTab.Apps) }
-        compose.onNodeWithText(Copy.explainHomeBack("Projectivy Launcher", "Google TV Home")).assertExists()
+        compose.onNodeWithText(Copy.explainHomeBack("Projectivy Launcher", "Google TV Home", service = false)).assertExists()
     }
     @Test fun apps_homeBack() = homeBack(false)
     @Test fun apps_homeBack_dark() = homeBack(true)

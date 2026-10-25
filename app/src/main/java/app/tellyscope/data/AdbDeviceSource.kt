@@ -22,6 +22,7 @@ import app.tellyscope.adb.ConnectionPrompt
 import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.Connector
 import app.tellyscope.adb.DeviceLink
+import app.tellyscope.adb.KeyHelper
 import app.tellyscope.adb.LabelHelper
 import app.tellyscope.adb.LanScanner
 import app.tellyscope.adb.NetworkStats
@@ -75,6 +76,11 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     @Volatile private var statsFor: Pair<String, StatsProfile>? = null
     private val hits = ConcurrentHashMap<String, ScanHit>()
     private val store = DeviceStore(File(appContext.filesDir, "devices.tsv"))
+    /** Launchers whose accessibility service a switch may turn on: only those `launchers.json` names. */
+    private val serviceLaunchers by lazy {
+        parseLaunchers(appContext.assets.open("launchers.json").bufferedReader().use { it.readText() })
+            .filter { it.accessibility }.map { it.pkg }.toSet()
+    }
     private val saved = ConcurrentHashMap<String, SavedDevice>()
     /** Remembered TVs that haven't answered since launch: shown offline, not "connecting". */
     private val restoring = ConcurrentHashMap.newKeySet<String>()
@@ -87,6 +93,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private val names = NameBook(File(appContext.filesDir, "names.tsv"))
     /** Last label seen per package, so history entries read like the app list. */
     private val labels = ConcurrentHashMap<String, String>()
+    /** The remote's key helper on each TV, while the remote is open. */
+    private val keyHelpers = ConcurrentHashMap<String, KeyHelper>()
     private val helperDex by lazy { appContext.assets.open("label-helper.jar").use { it.readBytes() } }
     private val appNames = AppNames(File(appContext.filesDir, "app-names"))
     private val lists = DeviceLists(File(appContext.filesDir, "lists"))
@@ -188,6 +196,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun forget(deviceId: String) {
         restored.await()
         watchers.remove(deviceId)?.cancel()
+        keyHelpers.remove(deviceId)?.close()
         links.remove(deviceId)?.disconnect()
         hits.remove(deviceId)
         restoring -= deviceId
@@ -354,6 +363,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 removable = p.name in userInstalled,
                 homeInstead = homeOptions?.takeIf { p.name in it.others }?.current,
                 homeBack = back?.takeIf { p.name == homeOptions?.current }?.let { names[it.pkg]?.label ?: AppNames.fallback(it.pkg) },
+                homeService = p.name in serviceLaunchers,
                 listKeep = p.name in keep,
             )
         }.sortedBy { it.label.lowercase() }
@@ -411,6 +421,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 // Undoing a home switch: the old launcher is on again, now make it Home again too.
                 val switch = undoing?.let { id -> book.entries(key).firstOrNull { it.id == id && it.action == Action.Home } }
                 val back = switch?.previous?.get("from")?.let { Actions(shell).setHome(it) }
+                // The service the switch turned on was only there to hold Home.
+                switch?.previous?.get("service")?.let { Actions(shell).setService(it, false) }
                 book.record(
                     deviceId = key,
                     at = System.currentTimeMillis(),
@@ -429,17 +441,25 @@ class AdbDeviceSource(context: Context) : DeviceSource {
 
     private suspend fun makeHome(deviceId: String, packageName: String, undoing: Long?): HistoryEntry {
         val key = key(deviceId)
-        return when (val r = Actions(session(deviceId)).makeHome(packageName)) {
-            is HomeResult.Switched -> book.record(
-                deviceId = key,
-                at = System.currentTimeMillis(),
-                action = Action.Home,
-                packageName = r.from.substringBefore('/'),
-                label = labels[packageName] ?: AppNames.fallback(packageName),
-                undo = Action.Enable,
-                undoing = undoing,
-                previous = mapOf("from" to r.from, "to" to r.to),
-            )
+        val actions = Actions(session(deviceId))
+        return when (val r = actions.makeHome(packageName)) {
+            is HomeResult.Switched -> {
+                // Where the TV sends Home to its own launcher, the new one holds it with this service.
+                val service = packageName.takeIf { it in serviceLaunchers }?.let { actions.homeService(it) }?.takeUnless { actions.serviceOn(it) }
+                val on = service?.let { actions.setService(it, true) }
+                val label = labels[packageName] ?: AppNames.fallback(packageName)
+                book.record(
+                    deviceId = key,
+                    at = System.currentTimeMillis(),
+                    action = Action.Home,
+                    packageName = r.from.substringBefore('/'),
+                    label = label,
+                    undo = Action.Enable,
+                    undoing = undoing,
+                    // "service" only when this switch turned it on, so Undo turns off no more than that.
+                    previous = mapOf("from" to r.from, "to" to r.to) + listOfNotNull(service?.takeIf { on == true }?.let { "service" to it }),
+                ).also { if (on == false) throw IllegalStateException(serviceNotOn(label)) }
+            }
             is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
             is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
         }
@@ -459,17 +479,22 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             ?.let { homeBackTarget(it, book.entries(key), builtIns(system, disabled, options)) }
             ?: throw IllegalStateException("there's no home screen to switch back to")
         return when (val r = Actions(shell).homeBack(target.pkg, target.activity)) {
-            is HomeResult.Switched -> book.record(
-                deviceId = key,
-                at = System.currentTimeMillis(),
-                action = Action.HomeBack,
-                packageName = added,
-                label = labels[target.pkg] ?: AppNames.fallback(target.pkg),
-                undo = Action.Home,
-                // The switch away from it is reversed now, so Restore leaves it alone.
-                undoing = undoing ?: target.reverses,
-                previous = mapOf("from" to r.from, "to" to r.to),
-            )
+            is HomeResult.Switched -> {
+                // Off with Home: it would keep sending Home to [added]. Undo, a switch, turns it on again.
+                val service = added.takeIf { it in serviceLaunchers }?.let { Actions(shell).homeService(it) }?.takeIf { Actions(shell).serviceOn(it) }
+                val off = service?.let { Actions(shell).setService(it, false) }
+                book.record(
+                    deviceId = key,
+                    at = System.currentTimeMillis(),
+                    action = Action.HomeBack,
+                    packageName = added,
+                    label = labels[target.pkg] ?: AppNames.fallback(target.pkg),
+                    undo = Action.Home,
+                    // The switch away from it is reversed now, so Restore leaves it alone.
+                    undoing = undoing ?: target.reverses,
+                    previous = mapOf("from" to r.from, "to" to r.to),
+                ).also { if (off == false) throw IllegalStateException(serviceNotOff(labels[added] ?: AppNames.fallback(added))) }
+            }
             is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
             is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
         }
@@ -550,9 +575,22 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         return Resolved(index, match, list, out.getOrNull(MATCH_KEYS.size)?.toIntOrNull())
     }
 
-    override suspend fun press(deviceId: String, key: RemoteKey) = busy(deviceId) { Remote(session(deviceId)).press(key) }
+    override suspend fun press(deviceId: String, key: RemoteKey) = busy(deviceId) { remote(deviceId).press(key) }
 
-    override suspend fun type(deviceId: String, text: String) = busy(deviceId) { Remote(session(deviceId)).type(text) }
+    /** One helper per link: a reconnect brings a new session, and the old helper went with the old one. */
+    private suspend fun remote(deviceId: String): Remote {
+        val session = session(deviceId)
+        val keys = keyHelpers.compute(deviceId) { _, k ->
+            if (k?.session === session) k else KeyHelper(session, helperDex).also { k?.close() }
+        }
+        return Remote(session, keys)
+    }
+
+    override fun closeRemote() {
+        keyHelpers.keys.toList().forEach { keyHelpers.remove(it)?.close() }
+    }
+
+    override suspend fun type(deviceId: String, text: String) = busy(deviceId) { remote(deviceId).type(text) }
 
     override suspend fun reboot(deviceId: String) = Remote(session(deviceId)).reboot()
 
@@ -681,6 +719,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         Parsers.TcpSocket.SYN_SENT, Parsers.TcpSocket.SYN_RECV -> "connecting"
         else -> "closing"
     }
+
+    private fun serviceNotOn(app: String) =
+        "$app is Home now, but its accessibility service didn't turn on, so the TV's Home button may still open its own launcher"
+
+    private fun serviceNotOff(app: String) =
+        "switched back, but $app's accessibility service is still on. Turn it off in the TV's Settings → Accessibility"
 
     private fun homeNotBack(app: String) =
         "turned $app back on, but the TV kept the other home screen. Press Home on the remote to pick $app"

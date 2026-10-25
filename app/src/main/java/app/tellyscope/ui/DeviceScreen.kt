@@ -114,9 +114,6 @@ data class DeviceActions(
     val showStats: (StatsProfile) -> Unit = {},
 )
 
-/** Off while the remote is made faster: the device page hides its Remote button. */
-internal const val REMOTE_ENABLED = false
-
 /**
  * The TV's vitals in one small card: internal storage as a full bar, since it decides whether an
  * install fits, then CPU, RAM, temperature and network speed as plain numbers.
@@ -432,8 +429,8 @@ internal fun AppRow(
                 } else {
                     Text(
                         when {
-                            proposed == Action.Home && home != null -> Copy.explainHome(app.label, app.packageName, homeLabel!!, home)
-                            proposed == Action.HomeBack && back != null -> Copy.explainHomeBack(app.label, back)
+                            proposed == Action.Home && home != null -> Copy.explainHome(app.label, app.packageName, homeLabel!!, home, app.homeService)
+                            proposed == Action.HomeBack && back != null -> Copy.explainHomeBack(app.label, back, app.homeService)
                             app.listKeep && proposed != Action.Enable -> Copy.explain(proposed, app.label, app.packageName) + "\n\n" + Copy.KEEP_WARNING
                             else -> Copy.explain(proposed, app.label, app.packageName)
                         },

@@ -12,6 +12,15 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.7.0 — 2026-10-25
+
+- **New:** The Remote is back, and keys land in about 50 ms. [#111](../../pull/111)
+- **New:** Projectivy, AT4K and Dispatch stay Home: Set as default turns on their service. [#108](../../pull/108)
+- **Improved:** Typing from the Remote takes a fraction of a second. [#111](../../pull/111)
+- **Improved:** The Remote opens from a button at the bottom of the TV page. [#113](../../pull/113)
+- **Fixed:** Apps no longer crashes on TVs that list an app twice. [#109](../../pull/109)
+- **Fixed:** An older "Switched home back" loses its Undo after a newer switch. [#108](../../pull/108)
+
 ## 0.6.3 — 2026-10-25
 
 - **Fixed:** A slow stats read no longer drops the TV mid-change. [#101](../../pull/101)

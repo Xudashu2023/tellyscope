@@ -21,8 +21,8 @@ android {
         minSdk = 26
         targetSdk = 37
         // A PR into main must raise both past the latest v* tag (.github/workflows/release-check.yml).
-        versionCode = 11
-        versionName = "0.6.3"
+        versionCode = 12
+        versionName = "0.7.0"
 
         // An alpha tag (release.yml, vX.Y.Z-alpha.N on dev) passes -Ptellyscope.alpha=N:
         // a separate app ID, so it installs next to the release.
@@ -78,8 +78,9 @@ android {
     }
 }
 
-// The label helper (src/helper): plain Java against android.jar, dexed on its own and shipped as
-// an asset. It runs on the TV through app_process, so it must not touch app code or libraries.
+// The TV helpers (src/helper: Labels, and the remote's Keys): plain Java against android.jar, dexed on
+// their own and shipped as one asset. They run on the TV through app_process, so they must not touch
+// app code or libraries.
 val compileLabelHelper by tasks.registering(JavaCompile::class) {
     source = fileTree("src/helper/java")
     classpath = files(androidComponents.sdkComponents.bootClasspath)

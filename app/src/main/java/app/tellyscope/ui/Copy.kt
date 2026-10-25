@@ -76,8 +76,11 @@ object Copy {
     fun homeBack(launcher: String) = "Switch home back to $launcher"
 
     /** The way back keeps the added launcher, so it can be made Home again or uninstalled. */
-    fun explainHomeBack(added: String, back: String) =
-        "Makes $back open when you press Home again, turning it back on if it's off. $added stays on. Undo in History makes $added Home again."
+    fun explainHomeBack(added: String, back: String, service: Boolean) = buildString {
+        append("Makes $back open when you press Home again, turning it back on if it's off. $added stays on")
+        append(if (service) ", with its accessibility service turned off. " else ". ")
+        append("Undo in History makes $added Home again.")
+    }
 
     /** Where the lists come from, for the Debloat screen and the snackbar after a change. */
     fun listSource(custom: String?) =
@@ -89,9 +92,13 @@ object Copy {
      * The home switch touches two apps, so it names both. The old launcher is disabled, not just
      * replaced: otherwise many TVs switch back to it by themselves.
      */
-    fun explainHome(app: String, pkg: String, current: String, currentPkg: String) = buildString {
+    fun explainHome(app: String, pkg: String, current: String, currentPkg: String, service: Boolean = false) = buildString {
         append("Makes $app ($pkg) open when you press Home, then disables $current ($currentPkg) so the TV can't switch back by itself. ")
         append("Undo in History turns $current back on and makes it Home again.")
+        if (service) {
+            append("\n\nIt also turns on $app's accessibility service, so the Home button opens $app on TVs that would open their own launcher. ")
+            append("An accessibility service can see what's on screen. Undo and Switch home back turn it off.")
+        }
         if (currentPkg in GOOGLE_HOMES) append("\n\nSome Google TV features, like the Apps row and the Live tab, are part of $current and go away with it.")
     }
 
