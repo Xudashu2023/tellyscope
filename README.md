@@ -19,7 +19,7 @@ Debloat your Android TV, install apps, and browse and transfer files on it, all 
 <table>
   <tr>
     <td width="25%"><img src="docs/screenshots/tv-page.png" alt="A TV's page: the TV at a glance, its vitals, and the Install, Debloat and Send buttons"></td>
-    <td width="25%"><img src="docs/screenshots/remote.png" alt="The Remote: a D-pad, Back and Home, a dock of four TV apps, volume, Play/Pause and typing on the TV"></td>
+    <td width="25%"><img src="docs/screenshots/remote.png" alt="The Remote: a D-pad, icon keys for Back, Home, Menu, mute and volume, a dock of four TV apps and typing on the TV"></td>
     <td width="25%"><img src="docs/screenshots/debloat.png" alt="Debloat: the TV's model on top, then the apps it will turn off, each with its package name"></td>
     <td width="25%"><img src="docs/screenshots/install.png" alt="Updating Netflix on the TV from an APK on the phone"></td>
   </tr>
@@ -84,7 +84,7 @@ Tellyscope is a phone app that talks to your Android TV, Google TV or Fire TV ov
 - **TV tweaks.** **Block ads with Private DNS** sends the TV's address lookups to an ad-blocking DNS provider (AdGuard by default, or any other you type in). Tellyscope then checks the TV can still look addresses up, and puts the old setting back if not. It needs Android 9 or newer. **Faster animations** makes menus move at twice the speed. Both land in History with an Undo. **Clear caches** frees space by clearing every app's temporary files; app data and sign-ins stay. **Take screenshot** saves what the TV shows to your phone.
 - **Connection requests.** When another device asks to debug the TV, Tellyscope shows the TV's "Allow debugging?" prompt on your phone, with the device's key fingerprint, so you can **Allow** or **Deny** it without the remote. **Always allow this device** appears when the TV's own prompt offers it.
 - **Files.** Send a file from your phone into the TV's Download or Movies folder, or save one from there to your phone. Two buttons under the TV pick the folder, and stay pinned under the bar as you scroll. An empty folder says so in the middle of the page. A file with the same name gets a " (1)" instead of being overwritten, and a cancelled copy leaves nothing half-written behind.
-- **Remote.** A D-pad, Back, Home, volume, Play/Pause and typing on the TV. **Add to dock** puts up to four of the TV's apps under Back and Home, each one tap from opening on the TV. Long-press one to change or remove it, or keep holding and move it to reorder. An app uninstalled from the TV leaves the dock by itself, and a snackbar says so. The restart button in the top bar asks first, then waits for the TV to come back: **Hide** keeps the wait in the top bar, and after a minute **Retry** waits another one.
+- **Remote.** A D-pad and icon keys for Back, Home, Menu, mute and volume, laid out like Google TV's phone remote, plus typing on the TV. Each key gives a short tick; **Vibrate on key press** in Settings turns it off. The D-pad's centre pauses a playing video. **Add to dock** puts up to four of the TV's apps under the volume keys, each one tap from opening on the TV. Long-press one to change or remove it, or keep holding and move it to reorder. An app uninstalled from the TV leaves the dock by itself, and a snackbar says so. The restart button in the top bar asks first, then waits for the TV to come back: **Hide** keeps the wait in the top bar, and after a minute **Retry** waits another one.
 
 ## Setting up your TV
 

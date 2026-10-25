@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -37,12 +38,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -72,6 +73,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ripple
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -81,6 +83,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -108,6 +111,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -186,7 +190,8 @@ fun RemoteScreen(
             TopAppBar(
                 title = { if (restart != null && hidden == stage) RestartStatus(late = restart.phase(state.now) != Restart.Phase.Waiting, onClick = { hidden = null }) else Text("Remote") },
                 navigationIcon = {
-                    IconButton(onClick = actions.back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to the TV's page") }
+                    // A chevron, not an arrow, so it can't be mistaken for the TV's Back key.
+                    IconButton(onClick = actions.back) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Back to the TV's page") }
                 },
                 actions = {
                     IconButton(onClick = { confirmReboot = true }, enabled = live) { Icon(RemoteIcons.RestartAlt, contentDescription = "Restart TV") }
@@ -204,33 +209,36 @@ fun RemoteScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Column(
+            CompositionLocalProvider(LocalKeyHaptics provides state.keyHaptics) { Column(
                 Modifier.alpha(if (live) 1f else 0.38f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 DPad(live, actions.press)
-                // Two keys where there were three: Menu went, and its room stays in case it comes back.
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    RoundKey(RemoteKey.BACK, "Back", live, actions.press) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-                    RoundKey(RemoteKey.HOME, "Home", live, actions.press) { Icon(Icons.Default.Home, null) }
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    RoundKey(RemoteKey.BACK, "Back", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                    RoundKey(RemoteKey.HOME, "Home", live, actions.press, size = 80.dp) { Icon(Icons.Outlined.Home, null, Modifier.size(32.dp)) }
+                    RoundKey(RemoteKey.MENU, "Menu", live, actions.press, Modifier.align(Alignment.CenterEnd)) { Icon(Icons.Default.Menu, null) }
                 }
-                // Clear space above and below, so a thumb aiming at Back, Home or Vol doesn't open an app.
-                DockSection(state.device.dock, state.device.apps, name(device), live, actions, Modifier.padding(vertical = 4.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillKey(RemoteKey.VOLUME_DOWN, "Volume down", live, actions.press, Modifier.weight(1f)) { Text("Vol −") }
-                    PillKey(RemoteKey.MUTE, "Mute", live, actions.press, Modifier.weight(1f)) { Text("Mute") }
-                    PillKey(RemoteKey.VOLUME_UP, "Volume up", live, actions.press, Modifier.weight(1f)) { Text("Vol +") }
-                }
-                PillKey(RemoteKey.PLAY_PAUSE, "Play or pause", live, actions.press, Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.PlayArrow, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Play / Pause")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RoundKey(RemoteKey.MUTE, "Mute or unmute", live, actions.press) { Icon(RemoteIcons.VolumeOff, null) }
+                    // One split pill: two halves of the same key, so the gap stays narrow.
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val (outer, inner) = 32.dp to 4.dp
+                        KeySurface(
+                            RemoteKey.VOLUME_DOWN, "Volume down", live, actions.press, RoundedCornerShape(outer, inner, inner, outer),
+                            MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
+                        ) { Icon(RemoteIcons.VolumeDown, null) }
+                        KeySurface(
+                            RemoteKey.VOLUME_UP, "Volume up", live, actions.press, RoundedCornerShape(inner, outer, outer, inner),
+                            MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
+                        ) { Icon(RemoteIcons.VolumeUp, null) }
                     }
                 }
+                // Clear space above and below, so a thumb aiming at a volume key doesn't open an app.
+                DockSection(state.device.dock, state.device.apps, name(device), live, actions, Modifier.padding(vertical = 4.dp))
                 Keyboard(live, actions.type)
-            }
+            } }
         }
     }
 }
@@ -257,30 +265,25 @@ private fun DPad(enabled: Boolean, press: suspend (RemoteKey) -> Boolean) {
             KeySurface(
                 RemoteKey.OK, "OK", enabled, press, CircleShape, MaterialTheme.colorScheme.primary,
                 Modifier.size(112.dp).align(Alignment.Center),
-            ) {
-                Text("OK", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onPrimary)
-            }
+            ) {}
         }
     }
 }
 
+/** An icon-only key; [label] is what TalkBack reads. */
 @Composable
-private fun RoundKey(key: RemoteKey, label: String, enabled: Boolean, press: suspend (RemoteKey) -> Boolean, icon: @Composable () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        KeySurface(key, label, enabled, press, CircleShape, MaterialTheme.colorScheme.secondaryContainer, Modifier.size(64.dp), icon)
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun PillKey(
+private fun RoundKey(
     key: RemoteKey,
     label: String,
     enabled: Boolean,
     press: suspend (RemoteKey) -> Boolean,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) = KeySurface(key, label, enabled, press, MaterialTheme.shapes.extraLarge, MaterialTheme.colorScheme.secondaryContainer, modifier.height(56.dp), content)
+    size: Dp = 64.dp,
+    icon: @Composable () -> Unit,
+) = KeySurface(key, label, enabled, press, CircleShape, MaterialTheme.colorScheme.secondaryContainer, modifier.size(size), icon)
+
+/** Off in Settings, a key press doesn't vibrate. */
+private val LocalKeyHaptics = staticCompositionLocalOf { true }
 
 /**
  * One remote key. Not a Button: a held [RemoteKey.repeats] key has to keep sending until the
@@ -299,6 +302,7 @@ private fun KeySurface(
 ) {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val haptics = LocalKeyHaptics.current
     val interactions = remember { MutableInteractionSource() }
     Surface(
         shape = shape,
@@ -311,13 +315,13 @@ private fun KeySurface(
                 contentDescription = label
                 if (enabled) onClick { scope.launch { press(key) }; true }
             }
-            .pointerInput(key, enabled) {
+            .pointerInput(key, enabled, haptics) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown()
                     val p = PressInteraction.Press(down.position)
                     interactions.tryEmit(p)
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (haptics) haptic.performHapticFeedback(HapticFeedbackType.VirtualKey)
                     var held = true
                     scope.launch { repeatWhileHeld(key, { held }, press) }
                     waitForUpOrCancellation()
@@ -694,6 +698,22 @@ private object RemoteIcons {
             "M16 11L13.81 11L15.81 13L16 13Z" +
             "M2 4.27L5.11 7.38C3.29 8.12 2 9.91 2 12C2 14.76 4.24 17 7 17L11 17L11 15.1L7 15.1C5.29 15.1 3.9 13.71 3.9 12C3.9 10.41 5.11 9.1 6.66 8.93" +
             "L8.73 11L8 11L8 13L10.73 13L13 15.27L13 17L14.73 17L18.74 21L20 19.74L3.27 3L2 4.27Z",
+    )
+    val VolumeUp = icon(
+        "VolumeUp",
+        "M3 9L3 15L7 15L12 20L12 4L7 9Z M16.5 12C16.5 10.23 15.48 8.71 14 7.97L14 16.02C15.48 15.29 16.5 13.77 16.5 12Z" +
+            "M14 3.23L14 5.29C16.89 6.15 19 8.83 19 12C19 15.17 16.89 17.85 14 18.71L14 20.77C18.01 19.86 21 16.28 21 12C21 7.72 18.01 4.14 14 3.23Z",
+    )
+    val VolumeDown = icon(
+        "VolumeDown",
+        "M18.5 12C18.5 10.23 17.48 8.71 16 7.97L16 16.02C17.48 15.29 18.5 13.77 18.5 12Z M5 9L5 15L9 15L14 20L14 4L9 9Z",
+    )
+    val VolumeOff = icon(
+        "VolumeOff",
+        "M16.5 12C16.5 10.23 15.48 8.71 14 7.97L14 10.18L16.45 12.63C16.48 12.43 16.5 12.22 16.5 12Z" +
+            "M19 12C19 12.94 18.8 13.82 18.46 14.64L19.97 16.15C20.63 14.91 21 13.5 21 12C21 7.72 18.01 4.14 14 3.23L14 5.29C16.89 6.15 19 8.83 19 12Z" +
+            "M4.27 3L3 4.27L7.73 9L3 9L3 15L7 15L12 20L12 13.27L16.25 17.52C15.58 18.04 14.83 18.45 14 18.7L14 20.76C15.38 20.45 16.63 19.81 17.69 18.95" +
+            "L19.73 21L21 19.73L12 10.73L4.27 3Z M12 4L9.91 6.09L12 8.18L12 4Z",
     )
     val SwapHoriz = icon("SwapHoriz", "M6.99 11L3 15L6.99 19L6.99 16L14 16L14 14L6.99 14L6.99 11Z M21 9L17.01 5L17.01 8L10 8L10 10L17.01 10L17.01 13L21 9Z")
     val RemoveCircle = icon(
