@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+import com.android.build.api.artifact.SingleArtifact
 import com.android.tools.r8.D8
 import com.android.tools.r8.D8Command
 import com.android.tools.r8.OutputMode
@@ -21,8 +22,8 @@ android {
         minSdk = 26
         targetSdk = 37
         // A PR into main must raise both past the latest v* tag (.github/workflows/release-check.yml).
-        versionCode = 14
-        versionName = "0.8.1"
+        versionCode = 15
+        versionName = "0.9.0"
 
         // An alpha tag (release.yml, vX.Y.Z-alpha.N on dev) passes -Ptellyscope.alpha=N:
         // a separate app ID, so it installs next to the release.
@@ -118,9 +119,34 @@ val dexLabelHelper by tasks.registering(DexLabelHelper::class) {
     outputDir = layout.buildDirectory.dir("generated/labelHelper/assets")
 }
 
+/** Fails the build when a release APK grows past the 3 MB budget. CI's `build` and release.yml both assemble release. */
+abstract class CheckApkSize : DefaultTask() {
+    @get:InputFiles abstract val apkDir: DirectoryProperty
+    @get:Input abstract val maxBytes: Property<Long>
+
+    @TaskAction fun check() {
+        val apks = apkDir.get().asFile.listFiles { f -> f.extension == "apk" }.orEmpty()
+        check(apks.isNotEmpty()) { "no APK in ${apkDir.get().asFile}" }
+        for (apk in apks) {
+            check(apk.length() <= maxBytes.get()) {
+                "${apk.name} is ${apk.length()} bytes, over the ${maxBytes.get()}-byte budget"
+            }
+            logger.lifecycle("${apk.name}: ${apk.length()} of ${maxBytes.get()} bytes")
+        }
+    }
+}
+
 androidComponents {
     onVariants { variant ->
         variant.sources.assets?.addGeneratedSourceDirectory(dexLabelHelper, DexLabelHelper::outputDir)
+    }
+    onVariants(selector().withBuildType("release")) { variant ->
+        val name = variant.name.replaceFirstChar { it.uppercase() }
+        val sizeCheck = tasks.register<CheckApkSize>("check${name}ApkSize") {
+            apkDir = variant.artifacts.get(SingleArtifact.APK)
+            maxBytes = 3_000_000L
+        }
+        afterEvaluate { tasks.named("assemble$name") { finalizedBy(sizeCheck) } }
     }
 }
 

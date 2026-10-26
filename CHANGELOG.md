@@ -12,6 +12,19 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.9.0 — 2026-10-26
+
+- **New:** A button on the Remote empties the TV's text box. [#144](../../pull/144)
+- **Improved:** The warning about another computer shows without scrolling. [#143](../../pull/143)
+- **Fixed:** Remove all other access waits for this phone to be allowed again. [#141](../../pull/141)
+- **Fixed:** The Remote no longer jumps while you type. [#141](../../pull/141)
+- **New:** Screen off turns off the TV's picture from the Remote; any key wakes it. [#139](../../pull/139)
+- **Fixed:** Apps show their real icon, not a banner strip or letter. [#136](../../pull/136)
+- **Improved:** The dock picker leaves out built-in phone-style apps like Camera. [#138](../../pull/138)
+- **New:** See who has ADB access to your TV, and remove it in one tap. [#137](../../pull/137)
+- **New:** Connected devices shows what's paired or plugged into the TV. [#137](../../pull/137)
+- **Improved:** About links to the website, GitHub and the demo video. [#137](../../pull/137)
+
 ## 0.8.1 — 2026-10-25
 
 - **New:** The Remote has icon keys like Google TV's phone remote, with Menu. [#132](../../pull/132)

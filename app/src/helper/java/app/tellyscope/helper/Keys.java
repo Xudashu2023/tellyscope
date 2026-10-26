@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package app.tellyscope.helper;
 
+import android.os.IBinder;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.InputEvent;
@@ -21,7 +22,9 @@ import java.lang.reflect.Method;
  * {@code 0} when it didn't. Prints {@code ready} first. Only key codes are read, so nothing typed
  * reaches a shell. The argument is the jar's own path, deleted once the helper is up; it exits at
  * the end of stdin. A line starting with {@code t} is text instead: the rest is typed the way
- * {@code input text} types it, one key press per character.
+ * {@code input text} types it, one key press per character. {@code p0} turns the TV's picture off
+ * and {@code p2} back on, through SurfaceFlinger: the TV stays awake, so ADB stays connected, and
+ * the picture stays off after the helper exits.
  */
 public final class Keys {
     /** InputManager's INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH: answers once the focused app is done with it. */
@@ -50,6 +53,16 @@ public final class Keys {
         for (String line; (line = in.readLine()) != null; ) {
             boolean ok;
             try {
+                if (line.startsWith("p")) {
+                    out.print(power(Integer.parseInt(line.substring(1).trim())) ? "1\n" : "0\n");
+                    out.flush();
+                    continue;
+                }
+                if (line.equals("c")) {
+                    out.print(clear(manager, inject) ? "1\n" : "0\n");
+                    out.flush();
+                    continue;
+                }
                 if (line.startsWith("t")) {
                     out.print(type(manager, inject, keymap, line.substring(1)) ? "1\n" : "0\n");
                     out.flush();
@@ -57,13 +70,35 @@ public final class Keys {
                 }
                 int code = Integer.parseInt(line.trim());
                 long now = SystemClock.uptimeMillis();
-                ok = send(manager, inject, now, KeyEvent.ACTION_DOWN, code)
-                    && send(manager, inject, now, KeyEvent.ACTION_UP, code);
+                ok = send(manager, inject, now, KeyEvent.ACTION_DOWN, code, 0)
+                    && send(manager, inject, now, KeyEvent.ACTION_UP, code, 0);
             } catch (Throwable t) {
                 ok = false;
             }
             out.print(ok ? "1\n" : "0\n");
             out.flush();
+        }
+    }
+
+    /**
+     * SurfaceControl's display power mode: 0 is off, 2 is on. Android 10 to 13 name the display by
+     * getInternalDisplayToken, older builds by getBuiltInDisplay(0). Android 14 moved both to a
+     * class the shell's VM can't load, so there it answers 0.
+     */
+    private static boolean power(int mode) {
+        try {
+            Class<?> sc = Class.forName("android.view.SurfaceControl");
+            Object display;
+            try {
+                display = sc.getMethod("getInternalDisplayToken").invoke(null);
+            } catch (NoSuchMethodException e) {
+                display = sc.getMethod("getBuiltInDisplay", int.class).invoke(null, 0);
+            }
+            if (display == null) return false;
+            sc.getMethod("setDisplayPowerMode", IBinder.class, int.class).invoke(null, display, mode);
+            return true;
+        } catch (Throwable t) {
+            return false;
         }
     }
 
@@ -83,8 +118,27 @@ public final class Keys {
         }
     }
 
-    private static boolean send(Object manager, Method inject, long downTime, int action, int code) throws Exception {
-        KeyEvent e = new KeyEvent(downTime, SystemClock.uptimeMillis(), action, code, 0, 0,
+    /** Ctrl+A, then Delete: everything in the focused text box is selected and deleted. */
+    private static boolean clear(Object manager, Method inject) {
+        try {
+            int ctrl = KeyEvent.META_CTRL_ON | KeyEvent.META_CTRL_LEFT_ON;
+            long now = SystemClock.uptimeMillis();
+            boolean ok = send(manager, inject, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, ctrl)
+                && send(manager, inject, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A, ctrl)
+                && send(manager, inject, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A, ctrl);
+            // Ctrl comes back up even when A wasn't taken, so the TV isn't left holding it.
+            ok = send(manager, inject, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0) && ok;
+            long del = SystemClock.uptimeMillis();
+            return ok
+                && send(manager, inject, del, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0)
+                && send(manager, inject, del, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL, 0);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static boolean send(Object manager, Method inject, long downTime, int action, int code, int meta) throws Exception {
+        KeyEvent e = new KeyEvent(downTime, SystemClock.uptimeMillis(), action, code, 0, meta,
             KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD);
         return (Boolean) inject.invoke(manager, e, WAIT_FOR_FINISH);
     }

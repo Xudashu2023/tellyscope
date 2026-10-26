@@ -63,6 +63,11 @@ import app.tellyscope.data.SuggestedGroup
 import app.tellyscope.data.Proc
 import app.tellyscope.data.Suggestions
 import app.tellyscope.ui.AboutDialog
+import app.tellyscope.ui.Removal
+import app.tellyscope.ui.ConnectedDevicesCard
+import app.tellyscope.ui.AccessWarning
+import app.tellyscope.ui.AccessScreen
+import app.tellyscope.ui.AccessActions
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.AppsTab
 import app.tellyscope.ui.ConnectScreen
@@ -101,6 +106,9 @@ import app.tellyscope.data.RELEASES
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import app.tellyscope.ui.UiState
 import app.tellyscope.ui.theme.TellyscopeTheme
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
@@ -621,7 +629,9 @@ class ScreenshotTest {
         compose.onNodeWithText("Running · ", substring = true).assertDoesNotExist()
         // The three main actions sit under the system widget, Debloat among them.
         for (t in listOf("Install app", "Debloat", "Send file")) compose.onNodeWithText(t).assertIsEnabled()
-        for (t in listOf("Internal storage", "Network", "Suggested for this TV", "Check for updates")) compose.onNodeWithText(t).assertExists()
+        for (t in listOf("Internal storage", "Network", "Check for updates")) compose.onNodeWithText(t).assertExists()
+        // The list's card stands on its own, with no heading over it.
+        compose.onNodeWithText("Suggested for this TV").assertDoesNotExist()
         compose.onNodeWithText("Updated ", substring = true).assertExists()
         // The Remote is the page's FAB, no longer a button in the top bar.
         compose.onNodeWithText("Remote", useUnmergedTree = true).assertExists()
@@ -948,6 +958,27 @@ class ScreenshotTest {
         // Play/Pause went: the D-pad's centre pauses a video.
         compose.onNodeWithContentDescription("Play or pause").assertDoesNotExist()
         compose.onNodeWithText("OK").assertDoesNotExist()
+    }
+
+    // Screen off (0.9): the button fills in and the title says how to wake it, so nothing below moves.
+    private fun screenOffState() = remoteState().let { it.copy(screenOff = setOf(it.selectedId!!)) }
+    @Test fun remote_screenOff() = shot("13_remote_screen_off") { RemoteScreen(screenOffState(), RemoteActions()) }
+    @Test fun remote_screenOff_dark() = shot("13_remote_screen_off", dark = true) { RemoteScreen(screenOffState(), RemoteActions()) }
+    @Test fun remote_screenOffTip() = shot("13_remote_screen_off_tip", screen = true) { RemoteScreen(remoteState().copy(screenOffTip = true), RemoteActions()) }
+
+    @Test fun screenOffSaysWhatATapDoes() {
+        var off by mutableStateOf(false)
+        compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(if (off) screenOffState() else remoteState(), RemoteActions()) } }
+        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertExists()
+        off = true
+        compose.onNodeWithContentDescription(Copy.SCREEN_ON).assertExists()
+        compose.onNodeWithText(Copy.SCREEN_OFF_WAKE, substring = true).assertExists()
+    }
+
+    @Test fun android14HasNoScreenOff() {
+        val s = remoteState().let { st -> st.copy(devices = st.devices.map { if (it.id == st.selectedId) it.copy(android = "14") else it }) }
+        compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(s, RemoteActions()) } }
+        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertDoesNotExist()
     }
 
     /**
@@ -1420,4 +1451,56 @@ class ScreenshotTest {
         val t = TransferUi("family-trip-2025.mp4", toTv = true, folder = TvFolder.MOVIES, progress = Progress(486_000_000, 812_000_000))
         DeviceTabsScreen(deviceState { copy(transfer = t) }, DeviceActions())
     }
+
+    // Connected devices and the access warning (0.9): the cards on their own, then the TV page with
+    // both, then Who has access and each step of Remove all other access.
+    private fun accessState(removal: Removal? = null) = runBlocking {
+        md3State().let { it.copy(device = it.device.copy(access = fake.access(it.selectedId!!), peripherals = fake.peripherals(it.selectedId!!), removal = removal)) }
+    }
+
+    private fun card(name: String, dark: Boolean, content: @Composable () -> Unit) = shot(name, dark) {
+        Surface { Column(Modifier.padding(16.dp)) { content() } }
+    }
+
+    @Test fun access_warning() = card("90_access_warning", false) { AccessWarning(accessState().device.access!!, AccessActions(), onWho = {}) }
+    @Test fun access_warning_dark() = card("90_access_warning", true) { AccessWarning(accessState().device.access!!, AccessActions(), onWho = {}) }
+    @Test fun access_warning_open() = card("91_access_warning_open", false) { AccessWarning(accessState().device.access!!, AccessActions(), onWho = {}, startOpen = true) }
+    @Test fun access_warning_open_dark() = card("91_access_warning_open", true) { AccessWarning(accessState().device.access!!, AccessActions(), onWho = {}, startOpen = true) }
+    @Test fun devices_card() = card("92_connected_devices", false) { ConnectedDevicesCard(accessState().device.peripherals!!) }
+    @Test fun devices_card_dark() = card("92_connected_devices", true) { ConnectedDevicesCard(accessState().device.peripherals!!) }
+    @Test fun devices_card_open() = card("93_connected_devices_open", false) { ConnectedDevicesCard(accessState().device.peripherals!!, startOpen = true) }
+    @Test fun devices_card_open_dark() = card("93_connected_devices_open", true) { ConnectedDevicesCard(accessState().device.peripherals!!, startOpen = true) }
+
+    /** The Overview scrolled to the warning: above the stats, then the tiles, the list, devices and Android. */
+    private fun accessOverview(dark: Boolean) {
+        // By key: scrolling to a node by tag never stops with the clock held.
+        val scroll = { compose.onNode(hasScrollAction()).performScrollToKey("accessWarning"); Unit }
+        // Built once: a fresh state on every recomposition would never let the page settle.
+        val state = accessState()
+        shot("94_overview_access", dark, before = scroll) { DeviceTabsScreen(state, DeviceActions()) }
+        compose.onNodeWithTag("accessWarning").assertExists()
+    }
+    @Test fun access_overview() = accessOverview(false)
+    @Test fun access_overview_dark() = accessOverview(true)
+
+    private fun accessScreen(name: String, dark: Boolean, removal: Removal?) {
+        val state = accessState(removal)
+        shot(name, dark, screen = removal?.step == Removal.Step.Confirm) { AccessScreen(state, AccessActions()) }
+    }
+    @Test fun access_list() = accessScreen("95_who_has_access", false, null)
+    @Test fun access_list_dark() = accessScreen("95_who_has_access", true, null)
+    @Test fun access_confirm() = accessScreen("96_remove_confirm", false, Removal(Removal.Step.Confirm))
+    @Test fun access_confirm_dark() = accessScreen("96_remove_confirm", true, Removal(Removal.Step.Confirm))
+    private val allow = Removal(Removal.Step.Allow, fingerprint = "3F:9A:1C:5D:E0:42:B7:19:8C:6A:F3:21:0D:94:7E:C2")
+    @Test fun access_allow() = accessScreen("97_remove_allow", false, allow)
+    @Test fun access_allow_dark() = accessScreen("97_remove_allow", true, allow)
+    @Test fun access_done() = accessScreen("98_remove_done", false, Removal(Removal.Step.Done))
+    @Test fun access_done_dark() = accessScreen("98_remove_done", true, Removal(Removal.Step.Done))
+    private val still = Removal(Removal.Step.StillConnected, still = Copy.connectionFrom("192.0.2.47"))
+    @Test fun access_still() = accessScreen("99_remove_still", false, still)
+    @Test fun access_still_dark() = accessScreen("99_remove_still", true, still)
+    @Test fun access_unconfirmed() = accessScreen("99_remove_unconfirmed", false, Removal(Removal.Step.Unconfirmed))
+    @Test fun access_unconfirmed_dark() = accessScreen("99_remove_unconfirmed", true, Removal(Removal.Step.Unconfirmed))
+    @Test fun access_manual() = accessScreen("99_remove_manual", false, Removal(Removal.Step.Manual))
+    @Test fun access_manual_dark() = accessScreen("99_remove_manual", true, Removal(Removal.Step.Manual))
 }

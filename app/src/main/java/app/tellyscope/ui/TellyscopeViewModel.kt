@@ -11,6 +11,7 @@ import app.tellyscope.adb.InstallKind
 import app.tellyscope.adb.StatsProfile
 import app.tellyscope.adb.InstallResult
 import app.tellyscope.adb.InstalledVersion
+import app.tellyscope.adb.Peripheral
 import app.tellyscope.adb.Progress
 import app.tellyscope.adb.Remote
 import app.tellyscope.adb.RemoteKey
@@ -41,6 +42,7 @@ import app.tellyscope.data.ScanKind
 import app.tellyscope.data.ScanProgress
 import app.tellyscope.data.Snapshot
 import app.tellyscope.data.Suggestions
+import app.tellyscope.data.TvAccess
 import app.tellyscope.data.TvSettings
 import app.tellyscope.data.TvTweaks
 import app.tellyscope.data.Update
@@ -105,7 +107,32 @@ data class DeviceUi(
     val request: ConnectionRequest? = null,
     /** The Remote's app shortcuts, in order. */
     val dock: List<Docked> = emptyList(),
+    /** Who may use ADB on the TV and who is connected; null until first read. */
+    val access: TvAccess? = null,
+    /** What's plugged in or paired; null until first read. */
+    val peripherals: List<Peripheral>? = null,
+    /** "Remove all other access", while it runs; null otherwise. */
+    val removal: Removal? = null,
 )
+
+/**
+ * "Remove all other access", one step at a time. The TV's keys are cleared ([Step.Revoking], or
+ * by hand in Developer options when the call isn't available: [Step.Manual]); Tellyscope then
+ * reconnects and the TV asks to allow this phone ([Step.Allow]). [Step.Done] only after a re-read
+ * shows nobody else; [Step.StillConnected] names who is left, [Step.Unconfirmed] means the TV
+ * wouldn't say.
+ */
+data class Removal(
+    val step: Step,
+    /** This phone's fingerprint, to compare with the TV's prompt. */
+    val fingerprint: String? = null,
+    /** The TV said no to this phone (Cancel, or the prompt timed out): offer to ask again. */
+    val refused: Boolean = false,
+    /** Who is still there, for [Step.StillConnected]: "a connection from …", or a computer's name. */
+    val still: String? = null,
+) {
+    enum class Step { Confirm, Revoking, Manual, Allow, Checking, Done, StillConnected, Unconfirmed }
+}
 
 data class SideloadUi(
     val step: Step = Step.Reading,
@@ -172,6 +199,10 @@ data class UiState(
     val update: Update? = null,
     /** A Remote key press vibrates. */
     val keyHaptics: Boolean = true,
+    /** The TVs whose picture the Remote turned off. */
+    val screenOff: Set<String> = emptySet(),
+    /** The Remote's Screen off button explains itself, the first time only. */
+    val screenOffTip: Boolean = false,
     /** The Apps tabs whose System section the user folded away. */
     val foldedSystem: Set<AppsTab> = emptySet(),
     /** The report screen; null when it's closed. */
@@ -221,6 +252,17 @@ const val SCREENSHOT = "screenshot"
 /** [DeviceUi.busy] value while the TV's connection prompt is being answered. */
 const val ANSWERING = "request"
 
+/** Where a removal ends, from the re-read after it: never Done on a guess. */
+fun outcome(access: TvAccess?): Removal = when {
+    access?.connected == null || access.allowed == null -> Removal(Removal.Step.Unconfirmed)
+    access.onlyThisPhone -> Removal(Removal.Step.Done)
+    else -> Removal(
+        Removal.Step.StillConnected,
+        still = access.others.firstOrNull()?.let { Copy.connectionFrom(it.address) }
+            ?: access.allowed.firstOrNull { !it.phone }?.let { it.name ?: Copy.UNNAMED_COMPUTER },
+    )
+}
+
 class TellyscopeViewModel(
     private val source: DeviceSource,
     private val storage: PhoneStorage? = null,
@@ -264,6 +306,9 @@ class TellyscopeViewModel(
     private var mediumJob: Job? = null
     private var listsJob: Job? = null
     private var requestJob: Job? = null
+    private var accessJob: Job? = null
+    /** Runs the removal across the reconnect it causes, so [select] doesn't stop it. */
+    private var removalJob: Job? = null
     private var updateJob: Job? = null
     /** The fingerprint the user waved away on the phone; its prompt stays hidden while the TV shows it. */
     private var dismissedRequest: String? = null
@@ -288,7 +333,7 @@ class TellyscopeViewModel(
             viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(checkUpdates = u.enabled, alphaBuild = u.alpha) } }
         }
         keyHaptics?.let { k ->
-            viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(keyHaptics = k.on) } }
+            viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(keyHaptics = k.on, screenOffTip = !k.screenOffTipSeen) } }
         }
         folds?.let { f ->
             viewModelScope.launch(Dispatchers.IO) {
@@ -410,9 +455,14 @@ class TellyscopeViewModel(
         mediumJob?.cancel()
         listsJob?.cancel()
         requestJob?.cancel()
+        accessJob?.cancel()
         // A copy still running on this TV keeps its dialog, after a reconnect or a look at another TV.
         val transfer = id?.let(transfers::get)
-        _state.update { it.copy(selectedId = id, device = DeviceUi(snapshot = id?.let(lastSnapshot::get), transfer = transfer), query = "") }
+        // A removal survives the reconnect it causes; the TV coming back reselects it.
+        _state.update {
+            val removal = it.device.removal.takeIf { _ -> it.selectedId == id }
+            it.copy(selectedId = id, device = DeviceUi(snapshot = id?.let(lastSnapshot::get), transfer = transfer, removal = removal), query = "")
+        }
         val device = _state.value.selected ?: return
         // History lives on the phone, so it shows (and undo is offered) even while the TV is off.
         viewModelScope.launch {
@@ -430,6 +480,7 @@ class TellyscopeViewModel(
         // Its own job: the list download never holds up apps or stats.
         listsJob = viewModelScope.launch { loadLists(id!!) }
         requestJob = viewModelScope.launch { watchRequests(id!!) }
+        accessJob = viewModelScope.launch { watchAccess(id!!) }
         mediumJob = viewModelScope.launch {
             // A TV that drops mid-read throws; the live flow ends and the offline card takes over.
             try {
@@ -906,6 +957,106 @@ class TellyscopeViewModel(
         }
     }
 
+    /**
+     * Who has access every 10 s while the TV's page is open. What's plugged in only when it opens
+     * and every 2 minutes after: that read is five `dumpsys` calls, too heavy for every tick.
+     * A failed read keeps the last answer; a removal in progress does its own reads.
+     */
+    private suspend fun watchAccess(id: String) {
+        var tick = 0
+        while (true) {
+            if (_state.value.device.removal == null) readAccess(id)
+            if (tick++ % 12 == 0) {
+                val found = try { source.peripherals(id) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                found?.let { p -> updateDevice(id) { it.copy(peripherals = p) } }
+            }
+            delay(10_000)
+        }
+    }
+
+    private suspend fun readAccess(id: String): TvAccess? {
+        val access = try { source.access(id) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        access?.let { a -> updateDevice(id) { it.copy(access = a) } }
+        return access
+    }
+
+    /** "It's mine": that address stops raising the warning on this TV. */
+    fun markMine(address: String) {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            source.markMine(id, address)
+            readAccess(id)
+        }
+    }
+
+    private fun setRemoval(id: String, removal: Removal?) = updateDevice(id) { it.copy(removal = removal) }
+
+    /** "Remove all other access…": asks first. */
+    fun askRemoveAccess() {
+        val id = _state.value.selectedId ?: return
+        setRemoval(id, Removal(Removal.Step.Confirm))
+    }
+
+    /** Cancel, Stop waiting or Done: the flow closes. Keys already cleared stay cleared. */
+    fun closeRemoval() {
+        removalJob?.cancel()
+        val id = _state.value.selectedId ?: return
+        setRemoval(id, null)
+        viewModelScope.launch { readAccess(id) }
+    }
+
+    /** Clears every key on the TV, or opens the manual guide when the TV won't take the call. */
+    fun removeAccess() {
+        val id = _state.value.selectedId ?: return
+        removalJob?.cancel()
+        removalJob = viewModelScope.launch {
+            setRemoval(id, Removal(Removal.Step.Revoking))
+            val ok = try { source.revokeAll(id) } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
+            if (ok) relink(id) else setRemoval(id, Removal(Removal.Step.Manual))
+        }
+    }
+
+    /** The manual guide's first step: Developer options open on the TV. */
+    fun openDeveloperOptions() {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            val ok = try { source.openDeveloperOptions(id) } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
+            if (!ok) _notice.value = Copy.DEV_OPTIONS_FAILED
+        }
+    }
+
+    /** The user revoked on the TV by hand: reconnect and allow this phone, as after the call. */
+    fun revokedByHand() {
+        val id = _state.value.selectedId ?: return
+        removalJob?.cancel()
+        removalJob = viewModelScope.launch { relink(id) }
+    }
+
+    /** The TV refused this phone: show its prompt again. */
+    fun askTvAgain() {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { it.copy(removal = it.removal?.copy(refused = false)) }
+        viewModelScope.launch { source.reconnect(id) }
+    }
+
+    /**
+     * Reconnects so the TV asks to allow this phone, then checks on the new link. The link shows
+     * online all through the reconnect, so only a read that works says the TV allowed this phone.
+     */
+    private suspend fun relink(id: String) {
+        setRemoval(id, Removal(Removal.Step.Allow, fingerprint = source.phoneFingerprint()))
+        source.reconnect(id)
+        while (true) {
+            val st = source.known().firstOrNull { it.id == id }?.state
+            if (st == DeviceState.NotAllowed) updateDevice(id) { it.copy(removal = it.removal?.copy(refused = true)) }
+            if (st == DeviceState.Online) readAccess(id)?.let { setRemoval(id, outcome(it)); return }
+            delay(1_000)
+        }
+    }
+
+    /** "Try again" after another computer was still there: clear again, no need to ask twice. */
+    fun retryRemoval() = removeAccess()
+
     /** "Pick your TV": remember the choice for this TV and show its list. */
     fun pickList(listId: String) {
         val id = _state.value.selectedId ?: return
@@ -1014,6 +1165,8 @@ class TellyscopeViewModel(
         val id = _state.value.selectedId ?: return false
         return keys.withLock {
             try {
+                // With the picture off, any key wakes it, the way a TV's own remote does, and does nothing else.
+                if (id in _state.value.screenOff) return@withLock wake(id)
                 source.press(id, key).also { if (!it) _notice.value = Copy.KEY_REFUSED }
             } catch (e: CancellationException) {
                 throw e
@@ -1024,7 +1177,59 @@ class TellyscopeViewModel(
         }
     }
 
-    fun closeRemote() = source.closeRemote()
+    /** Turns the TV's picture off, or back on. The TV stays connected either way. */
+    fun setScreenOff(off: Boolean) {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            keys.withLock {
+                try {
+                    if (!off) wake(id)
+                    else if (source.screen(id, on = false)) _state.update { it.copy(screenOff = it.screenOff + id) }
+                    else _notice.value = Copy.SCREEN_OFF_REFUSED
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    _notice.value = Copy.REMOTE_LOST
+                }
+            }
+        }
+    }
+
+    /** Under [keys]. True once the picture is back on. Throws when the TV is gone. */
+    private suspend fun wake(id: String): Boolean {
+        val ok = source.screen(id, on = true)
+        if (ok) _state.update { it.copy(screenOff = it.screenOff - id) } else _notice.value = Copy.SCREEN_ON_REFUSED
+        return ok
+    }
+
+    fun screenOffTipSeen() {
+        _state.update { it.copy(screenOffTip = false) }
+        viewModelScope.launch(Dispatchers.IO) { keyHaptics?.screenOffTipSeen = true }
+    }
+
+    /**
+     * The Remote closed. A picture it turned off stays off without it, and only the Remote can turn
+     * it back on, so that happens first.
+     */
+    fun closeRemote() {
+        val off = _state.value.screenOff
+        if (off.isEmpty()) return source.closeRemote()
+        _state.update { it.copy(screenOff = emptySet()) }
+        viewModelScope.launch {
+            keys.withLock {
+                for (id in off) {
+                    try {
+                        source.screen(id, on = true)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Gone: a restart or power cycle brings the picture back on its own.
+                    }
+                }
+            }
+            source.closeRemote()
+        }
+    }
 
     /** Types on the TV. Returns why it can't, or null once it's on its way. */
     fun type(text: String): String? {
@@ -1042,6 +1247,22 @@ class TellyscopeViewModel(
             }
         }
         return null
+    }
+
+    /** Empties the focused text box on the TV. */
+    fun clearText() {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            keys.withLock {
+                _notice.value = try {
+                    if (source.clearText(id)) null else Copy.CLEAR_REFUSED
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    Copy.REMOTE_LOST
+                }
+            }
+        }
     }
 
     /** The TV shows its own update screen; Tellyscope can't see what it finds, so it only says where to look. */
@@ -1071,7 +1292,8 @@ class TellyscopeViewModel(
                 _notice.value = Copy.REMOTE_LOST
                 return@launch
             }
-            if (ok) _state.update { it.copy(restarting = it.restarting + (id to Restart(clock()))) }
+            // A restart brings the picture back on by itself.
+            if (ok) _state.update { it.copy(restarting = it.restarting + (id to Restart(clock())), screenOff = it.screenOff - id) }
             else _notice.value = Copy.REBOOT_REFUSED
         }
     }

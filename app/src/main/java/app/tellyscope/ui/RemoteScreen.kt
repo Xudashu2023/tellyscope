@@ -2,6 +2,8 @@
 
 package app.tellyscope.ui
 
+import android.view.WindowManager
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,8 +56,10 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
@@ -63,17 +68,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.ripple
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -130,6 +142,8 @@ data class RemoteActions(
     val press: suspend (RemoteKey) -> Boolean = { true },
     /** Returns why the text can't be typed, or null once it's sent. */
     val type: (String) -> String? = { null },
+    /** Empties the text box on the TV; the Remote empties the phone's field with it. */
+    val clearText: () -> Unit = {},
     val reboot: () -> Unit = {},
     val back: () -> Unit = {},
     /** A restart running late: try the TV again and wait another minute. */
@@ -138,6 +152,10 @@ data class RemoteActions(
     val stopWaiting: () -> Unit = {},
     val launch: (Docked) -> Unit = {},
     val setDock: (List<Docked>) -> Unit = {},
+    /** Turns the TV's picture off (true) or back on (false). */
+    val screenOff: (Boolean) -> Unit = {},
+    /** The first-visit tip on Screen off was shown. */
+    val screenOffTipSeen: () -> Unit = {},
 )
 
 /** A held key repeats after this, then every [REPEAT_EVERY_MS], or slower if the TV is slower. */
@@ -170,6 +188,17 @@ fun RemoteScreen(
     val device = state.selected ?: return
     val restart = state.restarting[device.id]
     val live = device.state == DeviceState.Online && restart == null
+    val screenOff = device.id in state.screenOff
+    // Android 14 moved the call that turns the picture off out of the shell's reach.
+    val screenControl = (device.android?.substringBefore('.')?.toIntOrNull() ?: 0) < 14 || screenOff
+    // The keyboard shrinks this screen instead of panning the window, which jumped on every keystroke.
+    val window = LocalActivity.current?.window
+    DisposableEffect(window) {
+        if (window == null) return@DisposableEffect onDispose {}
+        val before = window.attributes.softInputMode
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        onDispose { window.setSoftInputMode(before) }
+    }
     var confirmReboot by rememberSaveable { mutableStateOf(false) }
     if (confirmReboot) RebootDialog(onRestart = { confirmReboot = false; actions.reboot() }, onDismiss = { confirmReboot = false })
     // Hide keeps a restart in the top bar; the dialog comes back when the wait moves on, or on a tap there.
@@ -188,19 +217,27 @@ fun RemoteScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { if (restart != null && hidden == stage) RestartStatus(late = restart.phase(state.now) != Restart.Phase.Waiting, onClick = { hidden = null }) else Text("Remote") },
+                title = {
+                    when {
+                        restart != null && hidden == stage -> RestartStatus(late = restart.phase(state.now) != Restart.Phase.Waiting, onClick = { hidden = null })
+                        // In place of the title, so the keys below never move.
+                        screenOff -> ScreenOffStatus()
+                        else -> Text("Remote")
+                    }
+                },
                 navigationIcon = {
                     // A chevron, not an arrow, so it can't be mistaken for the TV's Back key.
                     IconButton(onClick = actions.back) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Back to the TV's page") }
                 },
                 actions = {
+                    if (screenControl) ScreenOffButton(screenOff, live, showTip = state.screenOffTip, actions)
                     IconButton(onClick = { confirmReboot = true }, enabled = live) { Icon(RemoteIcons.RestartAlt, contentDescription = "Restart TV") }
                 },
             )
         },
     ) { pad ->
         Column(
-            Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
@@ -237,7 +274,7 @@ fun RemoteScreen(
                 }
                 // Clear space above and below, so a thumb aiming at a volume key doesn't open an app.
                 DockSection(state.device.dock, state.device.apps, name(device), live, actions, Modifier.padding(vertical = 4.dp))
-                Keyboard(live, actions.type)
+                Keyboard(live, actions.type, actions.clearText)
             } }
         }
     }
@@ -335,7 +372,8 @@ private fun KeySurface(
 }
 
 @Composable
-private fun Keyboard(enabled: Boolean, type: (String) -> String?) {
+@OptIn(ExperimentalMaterial3Api::class)
+private fun Keyboard(enabled: Boolean, type: (String) -> String?, clearText: () -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     fun send() {
@@ -353,8 +391,19 @@ private fun Keyboard(enabled: Boolean, type: (String) -> String?) {
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
         keyboardActions = KeyboardActions(onSend = { send() }),
         trailingIcon = {
-            IconButton(onClick = ::send, enabled = enabled && text.isNotEmpty()) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send to the TV")
+            Row {
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                    tooltip = { PlainTooltip { Text(Copy.CLEAR_TV_TEXT) } },
+                    state = rememberTooltipState(),
+                ) {
+                    IconButton(onClick = { text = ""; error = null; clearText() }, enabled = enabled) {
+                        Icon(RemoteIcons.Backspace, contentDescription = Copy.CLEAR_TV_TEXT)
+                    }
+                }
+                IconButton(onClick = ::send, enabled = enabled && text.isNotEmpty()) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send to the TV")
+                }
             }
         },
         modifier = Modifier.fillMaxWidth(),
@@ -439,6 +488,53 @@ private fun RestartDialog(restart: Restart, now: Long, tvName: String, onHide: (
 private fun StatusShape(icon: ImageVector, container: Color, content: Color) {
     Box(Modifier.size(56.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(container), contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(28.dp))
+    }
+}
+
+/** Filled while the picture is off; a tap turns it back on. Explains itself on the first visit. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScreenOffButton(off: Boolean, live: Boolean, showTip: Boolean, actions: RemoteActions) {
+    val tip = rememberTooltipState(isPersistent = true)
+    LaunchedEffect(showTip) {
+        if (showTip) {
+            tip.show()
+            actions.screenOffTipSeen()
+        }
+    }
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
+        tooltip = {
+            PlainTooltip {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    Text(Copy.SCREEN_OFF, style = MaterialTheme.typography.labelLarge)
+                    Text(Copy.SCREEN_OFF_TIP)
+                }
+            }
+        },
+        state = tip,
+        enableUserInput = false,
+    ) {
+        FilledIconToggleButton(
+            checked = off,
+            onCheckedChange = actions.screenOff,
+            enabled = live,
+            colors = IconButtonDefaults.filledIconToggleButtonColors(containerColor = Color.Transparent),
+        ) { Icon(RemoteIcons.TvOff, contentDescription = if (off) Copy.SCREEN_ON else Copy.SCREEN_OFF) }
+    }
+}
+
+@Composable
+private fun ScreenOffStatus() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(Copy.SCREEN_OFF, style = MaterialTheme.typography.titleMedium)
+        Text(
+            " \u00b7 ${Copy.SCREEN_OFF_WAKE}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -683,6 +779,17 @@ private fun DockPicker(dock: List<Docked>, apps: List<AppInfo>, tvName: String, 
 
 private object RemoteIcons {
     // Absolute commands only: Compose's path parser misplaces a relative move after a close.
+    val TvOff = icon(
+        "TvOff",
+        "M1 3.54L2.53 5.07C1.65 5.28 1 6.06 1 7L1 19C1 20.1 1.9 21 3 21L18.46 21L20.46 23L21.72 21.73L2.27 2.27L1 3.54Z" +
+            "M3 19L3 7L4.46 7L16.46 19L3 19Z" +
+            "M21 5L13.42 5L16.71 1.7L16 1L12 5L8 1L7.3 1.7L10.58 5L7.52 5L9.52 7L21 7L21 18.48L22.65 20.13C22.87 19.81 23 19.42 23 19L23 7C23 5.89 22.11 5 21 5Z",
+    )
+    val Backspace = icon(
+        "Backspace",
+        "M22 3L7 3C6.31 3 5.77 3.35 5.41 3.88L0 12L5.41 20.11C5.77 20.64 6.31 21 7 21L22 21C23.1 21 24 20.1 24 19L24 5C24 3.9 23.1 3 22 3Z" +
+            "M19 15.59L17.59 17L14 13.41L10.41 17L9 15.59L12.59 12L9 8.41L10.41 7L14 10.59L17.59 7L19 8.41L15.41 12L19 15.59Z",
+    )
     val RestartAlt = icon(
         "RestartAlt",
         "M12 5L12 2L8 6L12 10L12 7C15.31 7 18 9.69 18 13C18 15.97 15.83 18.43 13 18.91L13 20.93C16.95 20.44 20 17.08 20 13C20 8.58 16.42 5 12 5Z" +

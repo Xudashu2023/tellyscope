@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -264,6 +266,8 @@ fun DeviceTabsScreen(
                         } else if (offline) {
                             item { OfflineCard(device, state.now, actions.reconnect) }
                         }
+                        // Another computer connected needs acting on now, so it sits with the cards above the stats.
+                        ui.access?.takeIf { it.warning && !offline }?.let { a -> item(key = "accessWarning") { AccessWarning(a, actions.access, onWho = actions.whoHasAccess) } }
                         // Away, storage is the last one seen, this session's or the saved one after a restart.
                         val used = snap?.storageUsedGb ?: device.lastKnown?.storageUsedGb
                         val total = snap?.storageTotalGb ?: device.lastKnown?.storageTotalGb
@@ -287,8 +291,9 @@ fun DeviceTabsScreen(
                                 )
                             }
                         }
-                        item { SectionTitle("Suggested for this TV") }
+                        // The list, what's plugged in, and Android.
                         item { SuggestedCard(ui.lists, debloat, offline, onChanges = { toChanges = true; tab = TvTab.Tweaks }) }
+                        ui.peripherals?.takeIf { !offline }?.let { p -> item(key = "connectedDevices") { ConnectedDevicesCard(p) } }
                         item { AndroidCard(state, snap, offline, onUpdates = actions.checkUpdates) }
                     }
                     TvTab.Apps -> {
@@ -407,7 +412,11 @@ private fun AppMenu(state: UiState, actions: DeviceActions) {
     if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
     if (renaming) RenameDialog(device.nickname.orEmpty(), device.model ?: networkName(device), onSave = { renaming = false; actions.rename(device.id, it) }, onDismiss = { renaming = false })
     Box {
-        IconButton(onClick = { open = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
+        val others = state.device.access?.others.orEmpty().size
+        IconButton(onClick = { open = true }) {
+            // The access warning shows on ⋮ too, so it's there from every tab.
+            BadgedBox(badge = { if (others > 0) Badge() }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
+        }
         DropdownMenu(open, onDismissRequest = { open = false }, shape = MaterialTheme.shapes.large) {
             Row(Modifier.padding(start = 12.dp, end = 16.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Cookie(device, 40.dp)
@@ -421,6 +430,18 @@ private fun AppMenu(state: UiState, actions: DeviceActions) {
             MenuBlock {
                 DropdownMenuItem(text = { Text("Rename this TV") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { open = false; renaming = true })
                 DropdownMenuItem(text = { Text("Forget this TV") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { open = false; forgetting = true })
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(Copy.WHO_HAS_ACCESS)
+                            if (others > 0) Text(Copy.othersConnected(others), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    leadingIcon = {
+                        BadgedBox(badge = { if (state.device.access?.warning == true) Badge() }) { Icon(AccessIcons.Shield, null) }
+                    },
+                    onClick = { open = false; actions.whoHasAccess() },
+                )
                 DropdownMenuItem(text = { Text("Advanced") }, leadingIcon = { Icon(Icons.Default.List, null) }, onClick = { open = false; actions.advanced() })
             }
             Spacer(Modifier.height(4.dp))
@@ -511,11 +532,6 @@ internal fun debloatState(ui: DeviceUi): DebloatState {
     return DebloatState(candidates.size, on.size, back.size, count, count > 0 || ui.lists is Suggestions.NoList)
 }
 
-@Composable
-private fun SectionTitle(text: String) {
-    Text(text, Modifier.padding(start = 4.dp, top = 4.dp), style = MaterialTheme.typography.titleMedium)
-}
-
 /**
  * The list in one line of plain text, with See changes beside it. When apps Tellyscope turned off
  * are on again, one red line says so; the Debloat tile above carries the count and the fix.
@@ -594,7 +610,7 @@ private fun StatusRow(icon: ImageVector, title: String, sub: String?, button: St
 }
 
 
-private object TileIcons {
+internal object TileIcons {
     // Absolute commands only: Compose's path parser misplaces a relative move after a close.
     val Upload = icon("Upload", "M9 16H15V10H19L12 3L5 10H9ZM5 18H19V20H5Z")
     // Material's settings_remote: a remote with a ring button and two signal arcs.
