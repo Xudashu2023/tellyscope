@@ -60,6 +60,22 @@ class HistoryBook(private val file: File? = null) {
         return entry
     }
 
+    /** Takes entry [id]'s Undo away, for a change a later one made impossible to undo. */
+    @Synchronized
+    fun dropUndo(id: Long) {
+        val i = entries.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
+        entries[i] = entries[i].copy(undo = null)
+        save()
+    }
+
+    /** Adds [extra] to entry [id]'s saved state, for a later step of the same change. */
+    @Synchronized
+    fun amend(id: Long, extra: Map<String, String?>) {
+        val i = entries.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
+        entries[i] = entries[i].copy(previous = entries[i].previous.orEmpty() + extra)
+        save()
+    }
+
     /**
      * Apps Tellyscope left disabled on this TV: the last disable/enable it ran was a disable, and
      * the app wasn't already off before Tellyscope's first change. Restore turns on only these.
@@ -73,7 +89,7 @@ class HistoryBook(private val file: File? = null) {
     /** The newest disable of [packageName] that nothing has undone yet: what Restore reverses. */
     @Synchronized
     fun openDisable(deviceId: String, packageName: String): Long? = entries
-        .filter { it.deviceId == deviceId && it.packageName == packageName && it.action.disables && it.undoneAt == null }
+        .filter { it.deviceId == deviceId && it.packageName == packageName && it.disables && it.undoneAt == null }
         .maxOfOrNull { it.id }
 
     /**
@@ -95,9 +111,9 @@ class HistoryBook(private val file: File? = null) {
          * old launcher); an uninstall clears it.
          */
         fun leftDisabled(history: List<HistoryEntry>): List<String> =
-            history.filter { it.action.disables || it.action == Action.Enable || it.action == Action.Uninstall }
+            history.filter { it.disables || it.action == Action.Enable || it.action == Action.Uninstall }
                 .sortedBy { it.id }
-                .associate { it.packageName to it.action }
+                .associate { it.packageName to it }
                 .filterValues { it.disables }
                 .keys.sorted()
     }
@@ -173,7 +189,8 @@ fun homeBackTarget(current: String, history: List<HistoryEntry>, builtIns: List<
     return builtIns.firstOrNull { it != current }?.let { HomeBackTarget(it, null, null) }
 }
 
-private val Action.disables get() = this == Action.Disable || this == Action.Home
+/** A home switch disables the old launcher, unless there was none to replace: then it offers no undo. */
+private val HistoryEntry.disables get() = action == Action.Disable || (action == Action.Home && undo != null)
 
 /**
  * Turns apps back on one at a time and stops at the first refusal, saying how far it got so the

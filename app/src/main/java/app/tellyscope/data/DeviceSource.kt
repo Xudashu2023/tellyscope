@@ -42,8 +42,14 @@ interface DeviceSource {
     /** Previously paired devices, including offline ones. */
     suspend fun known(): List<Device>
 
-    /** Try a known TV again after it stopped at "not allowed": the TV shows its Allow prompt. */
+    /**
+     * Try a known TV again after it stopped at "not allowed": the TV shows its Allow prompt. Clears
+     * [Device.loggedOutAt]; a refusal now is a plain "not allowed", not another logout.
+     */
     suspend fun reconnect(deviceId: String)
+
+    /** Cancel on the Allow step: stops the attempt, and a TV that had logged this phone out goes back to that. */
+    suspend fun cancelReconnect(deviceId: String)
 
     /** The user's own name for a TV; blank goes back to the network name. Kept per [historyKey]. */
     suspend fun rename(deviceId: String, name: String?)
@@ -66,6 +72,26 @@ interface DeviceSource {
      * undo. [undoing] is the history entry this reverses, which gets marked undone.
      */
     suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long? = null): HistoryEntry
+
+    /** [Action.Home], leaving the launcher's accessibility service off when [service] is false. */
+    suspend fun makeHome(deviceId: String, packageName: String, service: Boolean): HistoryEntry = act(deviceId, Action.Home, packageName)
+
+    /** Turns on the accessibility service of [packageName], the launcher on Home; Undo of the switch turns it off again. */
+    suspend fun homeServiceOn(deviceId: String, packageName: String) {}
+
+    /** Puts away the TV page's card about [packageName]'s service being off, until the next switch. */
+    suspend fun dismissServiceNote(deviceId: String, packageName: String) {}
+
+    /** Opens the Play Store on the TV at [packageName]'s page, a launcher from the bundled list; false when it didn't open. */
+    suspend fun openStore(deviceId: String, packageName: String): Boolean = false
+
+    /** Whether [packageName] is installed yet, and if not, whether the Store is still on screen. */
+    suspend fun storeState(deviceId: String, packageName: String): StoreState = StoreState.Elsewhere
+
+    /** Not now on the Apps tab's card about getting a better home screen, kept per TV. */
+    suspend fun launcherCardHidden(deviceId: String): Boolean = false
+
+    suspend fun hideLauncherCard(deviceId: String) {}
 
     /** Everything Tellyscope changed on this TV, newest first. Survives app restarts. */
     suspend fun history(deviceId: String): List<HistoryEntry>
@@ -120,9 +146,6 @@ interface DeviceSource {
 
     /** Types into the focused box on the TV. The caller checks [app.tellyscope.adb.Remote.typeable] first. */
     suspend fun type(deviceId: String, text: String): Boolean
-
-    /** Empties the focused text box on the TV. False when this TV can't, or refused. Throws when it's gone. */
-    suspend fun clearText(deviceId: String): Boolean = false
 
     /**
      * Turns the TV's picture off or back on; the TV stays awake and connected. False when this TV

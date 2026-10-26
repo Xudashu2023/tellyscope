@@ -20,6 +20,8 @@ enum class RemoteKey(val code: Int, val repeats: Boolean = false) {
     VOLUME_UP(24, repeats = true),
     VOLUME_DOWN(25, repeats = true),
     MUTE(164),
+    /** Backspace in the focused text box. */
+    DEL(67, repeats = true),
 }
 
 class Remote(private val session: AdbSession, private val keys: KeyHelper? = null) {
@@ -32,6 +34,19 @@ class Remote(private val session: AdbSession, private val keys: KeyHelper? = nul
         keys?.press(key.code) ?: (session.shell("input keyevent ${key.code}").exitCode == 0)
 
     /**
+     * Home that opens [launcher], the activity Android resolves Home to (see [Actions.currentHome]).
+     * For Fire TV, whose Home key goes to Amazon's launcher whatever the default is. Null, a name
+     * that isn't a plain component, or a TV that won't start it fall back to the Home key.
+     */
+    suspend fun home(launcher: String?): Boolean {
+        if (launcher != null && COMPONENT.matches(launcher)) {
+            val r = session.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME -n '$launcher' 2>&1")
+            if (r.exitCode == 0 && "Error" !in r.output) return true
+        }
+        return press(RemoteKey.HOME)
+    }
+
+    /**
      * Opens the TV's own system update screen. Some builds have none, and older `am` reports a
      * missing screen in its output with exit code 0, so both are checked.
      */
@@ -42,12 +57,6 @@ class Remote(private val session: AdbSession, private val keys: KeyHelper? = nul
 
     /** Types [text] into whatever box has focus on the TV, through [keys] like [press]. Check [typeable] first. */
     suspend fun type(text: String): Boolean = keys?.type(text) ?: (session.shell(typeCommand(text)).exitCode == 0)
-
-    /**
-     * Empties the focused text box on the TV. Only the key helper can (`input` has no Ctrl+A on
-     * older Android): false when it isn't running or the TV refused. Throws if the link is gone.
-     */
-    suspend fun clearText(): Boolean = keys?.clear() ?: false
 
     /**
      * Turns the TV's picture off or back on, leaving the TV awake so the link stays up. Only the
@@ -81,6 +90,9 @@ class Remote(private val session: AdbSession, private val keys: KeyHelper? = nul
 
     companion object {
         const val MAX_TEXT = 200
+
+        /** `pkg/.Activity` or `pkg/pkg.Activity`; a nested class has a `$`, which the single quotes keep. */
+        private val COMPONENT = Regex("[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+")
 
         /**
          * What `input text` can type: printable ASCII only (it has no key for anything else), and

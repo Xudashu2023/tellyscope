@@ -30,12 +30,13 @@ data class AppsSplit(val apps: List<AppInfo>, val system: List<AppInfo>)
 /** Locked, as [AppRow] shows it: protected, and not offered as the new home screen or the way back. */
 private fun locked(app: AppInfo, all: List<AppInfo>) =
     app.protectedReason != null && (app.homeInstead == null || !app.enabled || homeLabel(all, app) == null) &&
-        (app.homeBack == null || !app.enabled)
+        (app.homeBack == null || !app.enabled) && !(app.homeFirst && app.enabled)
 
 /**
  * Splits the TV's apps for [tab]. Running: apps using RAM now. Installed: the user's own apps,
  * all in one list, a locked home screen keeping its lock. Built-in: what came with the TV.
- * Running and Built-in put the apps the user can't change last, in [AppsSplit.system].
+ * Running and Built-in put the apps the user can't change last, in [AppsSplit.system]; the user's
+ * own apps never go there.
  */
 internal fun splitApps(apps: List<AppInfo>, procs: List<Proc>, tab: AppsTab): AppsSplit {
     val running = procs.filter { it.ramMb > 0 }.mapNotNull { it.packageName }.toSet()
@@ -45,7 +46,7 @@ internal fun splitApps(apps: List<AppInfo>, procs: List<Proc>, tab: AppsTab): Ap
         AppsTab.BuiltIn -> apps.filter { it.system }
     }.sortedWith(compareBy({ locked(it, apps) }, { !it.enabled }, { it.system }, { it.label }))
     if (tab == AppsTab.Installed) return AppsSplit(shown, emptyList())
-    val (system, rest) = shown.partition { locked(it, apps) }
+    val (system, rest) = shown.partition { it.system && locked(it, apps) }
     return AppsSplit(rest, system)
 }
 

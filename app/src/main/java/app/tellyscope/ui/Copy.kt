@@ -13,8 +13,11 @@ import app.tellyscope.data.Snapshot
 import app.tellyscope.data.TvSettings
 import app.tellyscope.data.sourceName
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Date
 import java.util.Locale
 
@@ -96,12 +99,89 @@ object Copy {
     fun explainHome(app: String, pkg: String, current: String, currentPkg: String, service: Boolean = false) = buildString {
         append("Makes $app ($pkg) open when you press Home, then disables $current ($currentPkg) so the TV can't switch back by itself. ")
         append("Undo in History turns $current back on and makes it Home again.")
-        if (service) {
-            append("\n\nIt also turns on $app's accessibility service, so the Home button opens $app on TVs that would open their own launcher. ")
-            append("An accessibility service can see what's on screen. Undo and Switch home back turn it off.")
-        }
         if (currentPkg in GOOGLE_HOMES) append("\n\nSome Google TV features, like the Apps row and the Live tab, are part of $current and go away with it.")
+        if (service) append("\n\nNext, you choose whether to turn on its accessibility service.")
     }
+
+    /** No default home and no launcher of the TV's own on: nothing is turned off, so there's no Undo either. */
+    fun explainFirstHome(app: String, pkg: String, service: Boolean = false) = buildString {
+        append("Makes $app ($pkg) open when you press Home. The TV has no default home screen now, and nothing else is turned off.")
+        if (service) append("\n\nNext, you choose whether to turn on its accessibility service.")
+    }
+
+    /** The separate yes for a launcher's accessibility service: what it does, what it can see, how it goes. */
+    fun serviceTitle(app: String) = "Turn on $app's accessibility service?"
+
+    fun explainService(app: String, other: String) =
+        "It keeps the Home button opening $app. Without it, this TV's Home button may still open $other.\n\n" +
+            "An accessibility service can see what's on screen. Turn it on only if you trust $app.\n\n" +
+            "Undo in History or Switch home back turns it off."
+
+    const val TURN_IT_ON = "Turn it on"
+    const val SWITCH_WITHOUT = "Switch without it"
+    const val NOT_NOW = "Not now"
+    const val TURN_ON = "Turn on"
+    const val GOT_IT = "Got it"
+    const val SERVICE_OFF = "Accessibility service off"
+
+    /** The TV page's card while the launcher on Home has its service off; [other] is the launcher Home may still open. */
+    fun serviceOffTitle(other: String?) = "Home may open ${other ?: TV_OWN_LAUNCHER}"
+
+    const val TV_OWN_LAUNCHER = "the TV's own launcher"
+
+    /** Install a home screen: the Apps tab's card, the picker, the wait for the Store, and its dead ends. */
+    const val BETTER_HOME = "Get a better home screen"
+
+    fun betterHomeText(current: String?) =
+        "Swap ${current ?: "the TV's home screen"} for a launcher without ads. Free on the Play Store; switch back any time."
+
+    const val CHOOSE_ONE = "Choose one"
+    const val CHOOSE_HOME = "Choose a home screen"
+    const val CHOOSE_HOME_TEXT = "Each one replaces the TV's home screen. Tellyscope opens it in the Play Store on the TV; you install it with the remote."
+    const val RECOMMENDED = "Recommended"
+    const val USES_SERVICE = "Uses an accessibility service"
+    const val NO_SERVICE = "Open source · no accessibility service"
+    const val NOT_AFFILIATED = "Tellyscope isn't affiliated with any of these launchers or their developers."
+    const val OPEN_IN_STORE = "Open in Play Store"
+    const val INSTALL_HOME = "Install a home screen"
+    const val INSTALL_IT = "Install it on your TV"
+
+    fun installItText(name: String) =
+        "The Play Store is open on the TV, on $name's page. Use the remote to select Install. Tellyscope moves on by itself once it's installed."
+
+    fun storeOn(tv: String) = "Play Store on $tv"
+
+    const val WAITING_INSTALL = "Waiting for install…"
+    const val DOWNLOADS_TAKE = "Downloads can take a minute. Tellyscope can't see the download, only when it's done."
+    const val OPEN_STORE_AGAIN = "Open Play Store again"
+    const val MAKE_IT_HOME = "Make it the home screen?"
+
+    fun isInstalled(name: String) = "$name is installed."
+
+    fun launcherLater(name: String) = "$name is installed. To use it later, open its row and choose $MAKE_HOME."
+
+    fun launcherInstalled(name: String) = "$name is installed. Press Home on the remote to pick it."
+
+    fun launcherIsHome(name: String) = "$name is already your home screen."
+
+    const val NO_STORE = "The Play Store didn't open"
+
+    fun noStoreText(tv: String, name: String) =
+        "$tv didn't open the Play Store for Tellyscope. On the TV, open the Play Store yourself and search for $name. " +
+            "Tellyscope keeps watching and moves on once it's installed."
+
+    const val CHOOSE_ANOTHER = "Choose another"
+
+    fun notInstalled(name: String) = "$name isn't installed"
+
+    const val NOT_INSTALLED_TEXT =
+        "The Play Store closed on the TV before it was installed. If the Store said it isn't available for this TV, choose another launcher."
+
+    /** The Tweaks row that reopens it after Not now on the card. */
+    const val ANOTHER_HOME = "Another home screen"
+    const val ANOTHER_HOME_TEXT = "Install a launcher from the Play Store, like Projectivy or FLauncher. Switch back any time."
+
+    fun serviceOffText(app: String) = "$app's accessibility service is off, so the TV can take Home back."
 
     private val GOOGLE_HOMES = setOf("com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx")
 
@@ -167,6 +247,15 @@ object Copy {
 
     fun uninstallTitle(app: String) = "Uninstall $app?"
 
+    /** The confirm for the launcher on Home: Home goes back first, and a failed step stops it. */
+    fun uninstallHome(app: String, back: String, service: Boolean) = listOfNotNull(
+        "$app is your home screen. Before removing it, Tellyscope:",
+        "1. Makes $back the home screen again, turning it back on if it's off.",
+        "2. Turns off $app's accessibility service.".takeIf { service },
+        "${if (service) 3 else 2}. Uninstalls it, with everything saved in it. This can't be undone.",
+        "If a step fails, Tellyscope stops there, says which one, and doesn't uninstall.",
+    ).joinToString("\n\n")
+
     /** The Apps tabs' header over the apps the TV needs, and why they're apart. */
     const val SYSTEM = "System"
     const val SYSTEM_WHY = "Needed by the TV · can't be changed"
@@ -208,6 +297,27 @@ object Copy {
     const val WRONG_CODE = "That code didn't work. Check the 6 digits on the TV and try again."
     const val UNREACHABLE = "The TV didn't answer. Check it's on and on the same Wi-Fi as this phone, then try again."
     const val PAIR_INSTEAD = "The TV didn't let this phone in yet. Pair it once with the code from the TV."
+    const val LOGGED_OUT = "You were logged out"
+    const val LOGGED_OUT_WHY =
+        "The TV removed this phone's access. Tellyscope disconnected and stopped asking, so nothing pops up on the TV until you connect again."
+    val LOGGED_OUT_CAUSES = listOf(
+        "Revoke USB debugging authorisations was chosen on the TV.",
+        "Remove all other access was used from another phone, or from another Tellyscope build on this phone.",
+    )
+    fun loggedOutOf(name: String) = "Logged out of $name"
+
+    /** When the TV took the access back, on the logged-out page. */
+    fun loggedOutAt(at: Long, now: Long): String {
+        // Calendar days, so 23:00 reads "yesterday" the next morning.
+        val zone = ZoneId.systemDefault()
+        val days = ChronoUnit.DAYS.between(Instant.ofEpochMilli(at).atZone(zone).toLocalDate(), Instant.ofEpochMilli(now).atZone(zone).toLocalDate())
+        return when {
+            now - at < 5 * 60_000 -> "Logged out just now"
+            days == 0L -> "Logged out today, " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(at))
+            days == 1L -> "Logged out yesterday"
+            else -> "Logged out $days days ago"
+        }
+    }
 
     data class Health(val ok: Boolean, val text: String)
 
@@ -321,8 +431,7 @@ object Copy {
     const val REBOOT_IGNORED = "The TV didn't restart. Use its own remote or power button instead."
     const val REMOTE_OFFLINE = "The TV is offline. The remote works again once it reconnects."
     const val TYPE_HINT = "Select a text box on the TV, like a search box, then type here."
-    const val CLEAR_TV_TEXT = "Clear the TV's text box"
-    const val CLEAR_REFUSED = "The TV's text box didn't clear. Select it on the TV first, then try again."
+    const val BACKSPACE = "Backspace on the TV"
     const val SCREEN_OFF = "Screen off"
     const val SCREEN_ON = "Turn the screen back on"
     const val SCREEN_OFF_WAKE = "tap any key to wake"
@@ -484,6 +593,11 @@ object Copy {
     const val STILL_TITLE = "Another computer is still connected"
     fun stillText(who: String, tv: String) =
         "Tellyscope still sees $who on $tv. It may have connected again straight away. Turn it off or unplug it from the network, then try again."
+    fun stillOpenText(who: String, tv: String) =
+        "Tellyscope still sees $who on $tv. Its access is gone, but the TV keeps a connection open until it ends. Restart the TV to end it."
+    const val CHECK_AGAIN = "Check again"
+    const val RESTART_TV = "Restart the TV"
+    const val RESTARTING_TO_CHECK = "Restarting the TV…"
     fun connectionFrom(address: String) = "a connection from $address"
     const val TRY_AGAIN = "Try again"
     const val UNCONFIRMED_TITLE = "Revoked on the TV"

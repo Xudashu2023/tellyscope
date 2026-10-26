@@ -41,6 +41,7 @@ import app.tellyscope.data.ScanHit
 import app.tellyscope.data.ScanKind
 import app.tellyscope.data.ScanProgress
 import app.tellyscope.data.Snapshot
+import app.tellyscope.data.StoreState
 import app.tellyscope.data.Suggestions
 import app.tellyscope.data.TvAccess
 import app.tellyscope.data.TvSettings
@@ -113,14 +114,27 @@ data class DeviceUi(
     val peripherals: List<Peripheral>? = null,
     /** "Remove all other access", while it runs; null otherwise. */
     val removal: Removal? = null,
+    /** Install a home screen, while it's open; null otherwise. */
+    val launcher: LauncherFlow? = null,
+    /** Not now on the Apps tab's home-screen card, for this TV. True until read, so the card never flashes. */
+    val launcherCardHidden: Boolean = true,
 )
+
+/**
+ * Install a home screen: pick a launcher ([Step.Pick]), install it from the Play Store the TV
+ * opens at its page ([Step.Waiting], or [Step.NoStore] when the Store didn't open and the user
+ * searches by hand), then switch to it ([Step.Installed]). [Step.Left]: the Store closed first.
+ */
+data class LauncherFlow(val step: Step = Step.Pick, val pkg: String = RECOMMENDED.first().pkg) {
+    enum class Step { Pick, Waiting, NoStore, Left, Installed }
+}
 
 /**
  * "Remove all other access", one step at a time. The TV's keys are cleared ([Step.Revoking], or
  * by hand in Developer options when the call isn't available: [Step.Manual]); Tellyscope then
  * reconnects and the TV asks to allow this phone ([Step.Allow]). [Step.Done] only after a re-read
  * shows nobody else; [Step.StillConnected] names who is left, [Step.Unconfirmed] means the TV
- * wouldn't say.
+ * wouldn't say. From there, [Step.Restarting] restarts the TV to end the connection, then checks again.
  */
 data class Removal(
     val step: Step,
@@ -130,8 +144,10 @@ data class Removal(
     val refused: Boolean = false,
     /** Who is still there, for [Step.StillConnected]: "a connection from …", or a computer's name. */
     val still: String? = null,
+    /** [still] is a connection left open, which only a restart ends; false when a computer was allowed again. */
+    val open: Boolean = false,
 ) {
-    enum class Step { Confirm, Revoking, Manual, Allow, Checking, Done, StillConnected, Unconfirmed }
+    enum class Step { Confirm, Revoking, Manual, Allow, Checking, Done, StillConnected, Restarting, Unconfirmed }
 }
 
 data class SideloadUi(
@@ -252,15 +268,18 @@ const val SCREENSHOT = "screenshot"
 /** [DeviceUi.busy] value while the TV's connection prompt is being answered. */
 const val ANSWERING = "request"
 
+/** How often Install a home screen asks the TV whether the launcher is in yet. */
+const val STORE_POLL_MS = 3_000L
+
+/** How long it keeps asking before it says the launcher didn't arrive. */
+const val STORE_WAIT_MS = 10 * 60_000L
+
 /** Where a removal ends, from the re-read after it: never Done on a guess. */
 fun outcome(access: TvAccess?): Removal = when {
     access?.connected == null || access.allowed == null -> Removal(Removal.Step.Unconfirmed)
     access.onlyThisPhone -> Removal(Removal.Step.Done)
-    else -> Removal(
-        Removal.Step.StillConnected,
-        still = access.others.firstOrNull()?.let { Copy.connectionFrom(it.address) }
-            ?: access.allowed.firstOrNull { !it.phone }?.let { it.name ?: Copy.UNNAMED_COMPUTER },
-    )
+    else -> access.others.firstOrNull()?.let { Removal(Removal.Step.StillConnected, still = Copy.connectionFrom(it.address), open = true) }
+        ?: Removal(Removal.Step.StillConnected, still = access.allowed.firstOrNull { !it.phone }?.let { it.name ?: Copy.UNNAMED_COMPUTER })
 }
 
 class TellyscopeViewModel(
@@ -309,6 +328,8 @@ class TellyscopeViewModel(
     private var accessJob: Job? = null
     /** Runs the removal across the reconnect it causes, so [select] doesn't stop it. */
     private var removalJob: Job? = null
+    /** Watches the TV for a launcher's install from the Play Store. */
+    private var launcherJob: Job? = null
     private var updateJob: Job? = null
     /** The fingerprint the user waved away on the phone; its prompt stays hidden while the TV shows it. */
     private var dismissedRequest: String? = null
@@ -452,6 +473,7 @@ class TellyscopeViewModel(
 
     fun select(id: String?) {
         liveJob?.cancel()
+        launcherJob?.cancel()
         mediumJob?.cancel()
         listsJob?.cancel()
         requestJob?.cancel()
@@ -468,7 +490,8 @@ class TellyscopeViewModel(
         viewModelScope.launch {
             val history = source.history(device.id)
             val dock = source.dock(device.id)
-            _state.update { if (it.selectedId == device.id) it.copy(device = it.device.copy(history = history, dock = dock)) else it }
+            val hidden = source.launcherCardHidden(device.id)
+            _state.update { if (it.selectedId == device.id) it.copy(device = it.device.copy(history = history, dock = dock, launcherCardHidden = hidden)) else it }
         }
         if (device.state != DeviceState.Online) return
         liveJob = viewModelScope.launch {
@@ -522,6 +545,14 @@ class TellyscopeViewModel(
         }
     }
 
+    /** Cancel on the Allow step after Connect again: a logged-out TV shows its logout page again. */
+    fun cancelReconnect(id: String) {
+        viewModelScope.launch {
+            source.cancelReconnect(id)
+            refreshDevices()
+        }
+    }
+
     fun rename(id: String, name: String?) {
         viewModelScope.launch {
             source.rename(id, name)
@@ -553,6 +584,47 @@ class TellyscopeViewModel(
         run(pkg, action)
     }
 
+    /** A pending switch to a launcher with an accessibility service, answered in the dialog that asks about it. */
+    fun confirmHome(service: Boolean) {
+        val (pkg, action) = _state.value.device.pending?.takeIf { it.second == Action.Home } ?: return
+        run(pkg, action) { id -> source.makeHome(id, pkg, service) }
+    }
+
+    /** Turns on the accessibility service of [pkg], the launcher on Home, after a switch left it off. */
+    fun homeServiceOn(pkg: String) {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { it.copy(busy = pkg) }
+        viewModelScope.launch {
+            val apps = try {
+                source.homeServiceOn(id, pkg)
+                source.apps(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateDevice(id) { it.copy(busy = null) }
+                _notice.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
+                return@launch
+            }
+            val history = source.history(id)
+            updateDevice(id) { it.copy(apps = apps, busy = null, history = history) }
+        }
+    }
+
+    /** Got it on the TV page's card about [pkg]'s service being off: it stays away until the next switch. */
+    fun dismissServiceNote(pkg: String) {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { d -> d.copy(apps = d.apps.map { if (it.packageName == pkg) it.copy(homeServiceNote = false) else it }) }
+        viewModelScope.launch {
+            try {
+                source.dismissServiceNote(id, pkg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Only the card's memory: at worst it shows again next time.
+            }
+        }
+    }
+
     /**
      * Undoes [entry] on the TV it happened on. The snackbar passes [deviceId] because the user may
      * have switched TVs since; History only lists the selected TV's entries.
@@ -575,6 +647,120 @@ class TellyscopeViewModel(
                 }
             }
         }
+    }
+
+    /** Opens Install a home screen on its picker. */
+    fun openLauncherFlow() {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { it.copy(launcher = LauncherFlow()) }
+    }
+
+    /** Not now on the Apps tab's card: it stays away on this TV, and Tweaks keeps the way in. */
+    fun hideLauncherCard() {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { it.copy(launcherCardHidden = true) }
+        viewModelScope.launch { runCatching { source.hideLauncherCard(id) } }
+    }
+
+    /** Back to the picker, [pkg] still chosen; Choose another from a dead end. */
+    fun pickLauncher(pkg: String) {
+        val id = _state.value.selectedId ?: return
+        launcherJob?.cancel()
+        updateDevice(id) { it.copy(launcher = LauncherFlow(LauncherFlow.Step.Pick, pkg)) }
+    }
+
+    fun closeLauncherFlow() {
+        val id = _state.value.selectedId ?: return
+        launcherJob?.cancel()
+        updateDevice(id) { it.copy(launcher = null) }
+    }
+
+    /**
+     * Opens the Play Store on the TV at [pkg]'s page, then checks every few seconds whether it's
+     * installed, or the Store has closed without it. Where the Store didn't open, it keeps
+     * checking while the user searches by hand. After [STORE_WAIT_MS] without it, it stops at [LauncherFlow.Step.Left].
+     *
+     * Known: a Google sign-in or consent screen inside the Store runs as another app
+     * (com.google.android.gms), so it can read as leaving the Store and end the wait early.
+     * Open Store again recovers.
+     */
+    fun installLauncher(pkg: String) {
+        val id = _state.value.selectedId ?: return
+        launcherJob?.cancel()
+        val step = { s: LauncherFlow.Step -> updateDevice(id) { it.copy(launcher = it.launcher?.let { _ -> LauncherFlow(s, pkg) }) } }
+        // Already on the TV (picked from Tweaks after a launcher was added): no Store detour.
+        _state.value.device.apps.firstOrNull { it.packageName == pkg && it.enabled }?.let { have ->
+            if (have.homeInstead != null) {
+                step(LauncherFlow.Step.Installed)
+            } else {
+                updateDevice(id) { it.copy(launcher = null) }
+                _notice.value = if (have.home) Copy.launcherIsHome(launcherName(pkg)) else Copy.launcherInstalled(launcherName(pkg))
+            }
+            return
+        }
+        step(LauncherFlow.Step.Waiting)
+        launcherJob = viewModelScope.launch {
+            val opened = try {
+                source.openStore(id, pkg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+            if (!opened) step(LauncherFlow.Step.NoStore)
+            var seen = opened
+            repeat((STORE_WAIT_MS / STORE_POLL_MS).toInt()) {
+                delay(STORE_POLL_MS)
+                val now = try {
+                    source.storeState(id, pkg)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    return@repeat // a dropped read: the next one tells
+                }
+                when (now) {
+                    StoreState.Installed -> {
+                        val apps = try {
+                            source.apps(id)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
+                        }
+                        apps?.let { a -> updateDevice(id) { it.copy(apps = a) } }
+                        // No way to offer it as Home (the TV asks each time): say where to find it instead.
+                        if (apps?.firstOrNull { it.packageName == pkg }?.homeInstead == null) {
+                            updateDevice(id) { it.copy(launcher = null) }
+                            _notice.value = Copy.launcherInstalled(launcherName(pkg))
+                        } else {
+                            step(LauncherFlow.Step.Installed)
+                        }
+                        return@launch
+                    }
+                    StoreState.InStore -> seen = true
+                    StoreState.Elsewhere -> if (seen) {
+                        step(LauncherFlow.Step.Left)
+                        return@launch
+                    }
+                }
+            }
+            step(LauncherFlow.Step.Left)
+        }
+    }
+
+    /** Yes on the installed launcher, with its accessibility service or without; the flow closes and the switch runs. */
+    fun switchToLauncher(service: Boolean) {
+        val id = _state.value.selectedId ?: return
+        val pkg = _state.value.device.launcher?.pkg ?: return
+        updateDevice(id) { it.copy(launcher = null) }
+        run(pkg, Action.Home, id = id) { source.makeHome(it, pkg, service) }
+    }
+
+    /** Not now on the installed launcher: where to switch later. */
+    fun launcherLater() {
+        val pkg = _state.value.device.launcher?.pkg ?: return
+        closeLauncherFlow()
+        _notice.value = Copy.launcherLater(launcherName(pkg))
     }
 
     /** Ad-blocking Private DNS through [host], or back to Automatic with null. */
@@ -646,13 +832,19 @@ class TellyscopeViewModel(
     private fun updateDevice(id: String, f: (DeviceUi) -> DeviceUi) =
         _state.update { s -> if (s.selectedId == id) s.copy(device = f(s.device)) else s }
 
-    private fun run(pkg: String, action: Action, undoing: Long? = null, id: String? = _state.value.selectedId) {
+    private fun run(
+        pkg: String,
+        action: Action,
+        undoing: Long? = null,
+        id: String? = _state.value.selectedId,
+        act: suspend (String) -> HistoryEntry = { source.act(it, action, pkg, undoing) },
+    ) {
         if (id == null) return
         updateDevice(id) { it.copy(pending = null, busy = pkg) }
         viewModelScope.launch {
             // The source throws with the user-facing reason when the TV refuses.
             val (entry, apps) = try {
-                source.act(id, action, pkg, undoing) to source.apps(id)
+                act(id) to source.apps(id)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1054,8 +1246,39 @@ class TellyscopeViewModel(
         }
     }
 
-    /** "Try again" after another computer was still there: clear again, no need to ask twice. */
+    /** "Try again" after a computer was allowed again: clear again, no need to ask twice. */
     fun retryRemoval() = removeAccess()
+
+    /** "Check again" after a connection was left open: reads the TV again, clears nothing. */
+    fun checkAgain() {
+        val id = _state.value.selectedId ?: return
+        removalJob?.cancel()
+        removalJob = viewModelScope.launch {
+            setRemoval(id, Removal(Removal.Step.Checking))
+            setRemoval(id, outcome(readAccess(id)))
+        }
+    }
+
+    /**
+     * "Restart the TV" after a connection was left open: a restart ends every connection.
+     * Waits for the TV to come back, as the Remote does, then checks again. A refused restart
+     * leaves the screen as it was, and the snackbar says why.
+     */
+    fun restartToRemove() {
+        val id = _state.value.selectedId ?: return
+        val before = _state.value.device.removal
+        removalJob?.cancel()
+        removalJob = viewModelScope.launch {
+            setRemoval(id, Removal(Removal.Step.Restarting))
+            if (!restart(id)) {
+                setRemoval(id, before)
+                return@launch
+            }
+            while (id in _state.value.restarting) delay(1_000)
+            setRemoval(id, Removal(Removal.Step.Checking))
+            setRemoval(id, outcome(readAccess(id)))
+        }
+    }
 
     /** "Pick your TV": remember the choice for this TV and show its list. */
     fun pickList(listId: String) {
@@ -1249,22 +1472,6 @@ class TellyscopeViewModel(
         return null
     }
 
-    /** Empties the focused text box on the TV. */
-    fun clearText() {
-        val id = _state.value.selectedId ?: return
-        viewModelScope.launch {
-            keys.withLock {
-                _notice.value = try {
-                    if (source.clearText(id)) null else Copy.CLEAR_REFUSED
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    Copy.REMOTE_LOST
-                }
-            }
-        }
-    }
-
     /** The TV shows its own update screen; Tellyscope can't see what it finds, so it only says where to look. */
     fun checkUpdates() {
         val id = _state.value.selectedId ?: return
@@ -1283,19 +1490,23 @@ class TellyscopeViewModel(
 
     fun reboot() {
         val id = _state.value.selectedId ?: return
-        viewModelScope.launch {
-            val ok = try {
-                source.reboot(id)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                _notice.value = Copy.REMOTE_LOST
-                return@launch
-            }
-            // A restart brings the picture back on by itself.
-            if (ok) _state.update { it.copy(restarting = it.restarting + (id to Restart(clock())), screenOff = it.screenOff - id) }
-            else _notice.value = Copy.REBOOT_REFUSED
+        viewModelScope.launch { restart(id) }
+    }
+
+    /** Asks the TV to restart and starts the wait for it; false, with the snackbar saying why, when it won't. */
+    private suspend fun restart(id: String): Boolean {
+        val ok = try {
+            source.reboot(id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            _notice.value = Copy.REMOTE_LOST
+            return false
         }
+        // A restart brings the picture back on by itself.
+        if (ok) _state.update { it.copy(restarting = it.restarting + (id to Restart(clock())), screenOff = it.screenOff - id) }
+        else _notice.value = Copy.REBOOT_REFUSED
+        return ok
     }
 
     /** Retry once a restart runs late: the link tries the TV again, and the wait starts over for a minute. */

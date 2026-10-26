@@ -51,6 +51,11 @@ data class Device(
     val brand: String? = null,
     /** What the TV last reported, kept until Forget; as of [lastSeen]. Null before it ever answered. */
     val lastKnown: LastKnown? = null,
+    /**
+     * Epoch millis the TV took back a key it had allowed: this phone is logged out and stops asking
+     * (state stays [DeviceState.NotAllowed]). Null otherwise; cleared by a reconnect.
+     */
+    val loggedOutAt: Long? = null,
 )
 
 /**
@@ -119,12 +124,24 @@ data class AppInfo(
     val iconAccent: Long? = null,
     /** Installed by the user (`pm list packages -3`), so Uninstall is offered. Never for apps that came with the TV. */
     val removable: Boolean = false,
+    /** The launcher Home opens now. */
+    val home: Boolean = false,
+    /** On the bundled `launchers.json`: a launcher people add, never a TV's own. */
+    val listedLauncher: Boolean = false,
     /** Another launcher that can replace the current home screen, [homeInstead]: "Set as default launcher" is offered. */
     val homeInstead: String? = null,
+    /** No default home and no launcher of the TV's own on: "Set as default launcher" is offered with nothing to replace. */
+    val homeFirst: Boolean = false,
+    /** A launcher: it answers the Home button (an off app answers nothing). */
+    val answersHome: Boolean = false,
     /** On the home screen the user added: the name of the launcher "Switch home back" returns to. */
     val homeBack: String? = null,
     /** A launcher that keeps Home with its accessibility service: the switch turns it on, the way back off. */
     val homeService: Boolean = false,
+    /** The launcher on Home, with its accessibility service off: Home may still open the TV's own. The row offers Turn on. */
+    val homeServiceOff: Boolean = false,
+    /** [homeServiceOff], and the TV page's card about it hasn't been put away with Got it since the switch. */
+    val homeServiceNote: Boolean = false,
     /** This TV's list says to keep it: Stop, Disable and Uninstall still run, after a warning. */
     val listKeep: Boolean = false,
     /** Has an icon on a launcher, so the Remote's dock can open it. */
@@ -132,6 +149,9 @@ data class AppInfo(
     /** Has an icon on the TV's own home screen, not only a phone-style one. True when the TV can't say. */
     val tvHome: Boolean = true,
 )
+
+/** Where an install from the Play Store stands, read every few seconds while the TV shows the Store. */
+enum class StoreState { Installed, InStore, Elsewhere }
 
 /** An app on the Remote's dock. [label] is kept so it can be named after the app is gone. */
 data class Docked(val packageName: String, val label: String)

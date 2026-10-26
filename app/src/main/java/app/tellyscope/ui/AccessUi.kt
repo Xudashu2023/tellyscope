@@ -94,6 +94,9 @@ data class AccessActions(
     val revokedByHand: () -> Unit = {},
     val askAgain: () -> Unit = {},
     val retry: () -> Unit = {},
+    /** A connection left open: read the TV again, or restart it to end the connection. */
+    val checkAgain: () -> Unit = {},
+    val restart: () -> Unit = {},
 )
 
 internal object AccessIcons {
@@ -137,6 +140,7 @@ internal object AccessIcons {
         "M17 2H7c-1.1 0-2 .9-2 2v16c0 1.1.9 1.99 2 1.99L17 22c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" +
             "M12 4a2 2 0 1 0 0 4 2 2 0 1 0 0-4zM12 10a5 5 0 1 0 0 10 5 5 0 1 0 0-10zM12 12a3 3 0 1 0 0 6 3 3 0 1 0 0-6z",
     )
+    val Camera = icon("Camera", "M15 8v8H5V8h10m1-2H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4V7c0-.55-.45-1-1-1z")
     val Hdmi = icon("Hdmi", "M18 7V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v3H5v6l3 6v3h8v-3l3-6V7h-1zM8 4h8v3h-2V5h-1v2h-2V5h-1v2H8V4z")
 
     private fun icon(name: String, path: String) = ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
@@ -153,6 +157,7 @@ internal object AccessIcons {
         Peripheral.Kind.Bluetooth -> Bluetooth
         Peripheral.Kind.Usb -> Usb
         Peripheral.Kind.Hdmi -> Hdmi
+        Peripheral.Kind.Camera -> Camera
     }
 }
 
@@ -307,10 +312,22 @@ fun AccessScreen(state: UiState, actions: AccessActions, snackbar: SnackbarHostS
                 body, Verdict.Done, Copy.DONE_TITLE, Copy.DONE_TEXT,
                 trust = true,
             ) { Button(onClick = { actions.close(); actions.back() }) { Text(Copy.backTo(name(device))) } }
-            Removal.Step.StillConnected -> Outcome(body, Verdict.Still, Copy.STILL_TITLE, Copy.stillText(removal.still ?: Copy.UNNAMED_COMPUTER, name(device))) {
-                OutlinedButton(onClick = actions.close) { Text(Copy.WHO_HAS_ACCESS) }
-                Button(onClick = actions.retry) { Text(Copy.TRY_AGAIN) }
+            Removal.Step.StillConnected -> if (removal.open) {
+                // Only a restart ends an open connection, so it leads; Who has access steps down to a link.
+                Outcome(
+                    body, Verdict.Still, Copy.STILL_TITLE, Copy.stillOpenText(removal.still ?: Copy.UNNAMED_COMPUTER, name(device)),
+                    link = { TextButton(onClick = actions.close) { Text(Copy.WHO_HAS_ACCESS) } },
+                ) {
+                    OutlinedButton(onClick = actions.checkAgain) { Text(Copy.CHECK_AGAIN) }
+                    Button(onClick = actions.restart) { Text(Copy.RESTART_TV) }
+                }
+            } else {
+                Outcome(body, Verdict.Still, Copy.STILL_TITLE, Copy.stillText(removal.still ?: Copy.UNNAMED_COMPUTER, name(device))) {
+                    OutlinedButton(onClick = actions.close) { Text(Copy.WHO_HAS_ACCESS) }
+                    Button(onClick = actions.retry) { Text(Copy.TRY_AGAIN) }
+                }
             }
+            Removal.Step.Restarting -> Waiting(Copy.RESTARTING_TO_CHECK, body)
             Removal.Step.Unconfirmed -> Outcome(body, Verdict.Unknown, Copy.UNCONFIRMED_TITLE, Copy.UNCONFIRMED_TEXT) {
                 Button(onClick = actions.close) { Text(Copy.DONE) }
             }
@@ -559,7 +576,15 @@ private enum class Verdict { Done, Still, Unknown }
 /** C6, C6b and C6c: a cookie badge, what Tellyscope found, and where to go next. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun Outcome(modifier: Modifier, kind: Verdict, title: String, text: String, trust: Boolean = false, buttons: @Composable () -> Unit) {
+private fun Outcome(
+    modifier: Modifier,
+    kind: Verdict,
+    title: String,
+    text: String,
+    trust: Boolean = false,
+    link: (@Composable () -> Unit)? = null,
+    buttons: @Composable () -> Unit,
+) {
     val c = MaterialTheme.colorScheme
     val (bg, fg) = when (kind) {
         Verdict.Done -> c.primaryContainer to c.onPrimaryContainer
@@ -585,5 +610,6 @@ private fun Outcome(modifier: Modifier, kind: Verdict, title: String, text: Stri
             }
         }
         Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { buttons() }
+        if (link != null) Box(Modifier.padding(top = 8.dp)) { link() }
     }
 }
