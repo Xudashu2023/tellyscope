@@ -273,12 +273,6 @@ object Copy {
 
     fun mb(v: Int) = if (v >= 1024) "%.1f GB".format(v / 1024.0) else "$v MB"
 
-    fun disabledSuggested(done: Int, of: Int) = when {
-        done == of -> "Disabled $done ${if (done == 1) "app" else "apps"}. Undo any of them from History."
-        done == 0 -> "The TV didn't disable any of them."
-        else -> "Disabled $done of $of apps; the TV refused the rest. Undo any of them from History."
-    }
-
     fun uninstallTitle(app: String) = "Uninstall $app?"
 
     /** The confirm for the launcher on Home: Home goes back first, and a failed step stops it. */
@@ -641,6 +635,16 @@ object Copy {
     fun isHome(app: String) = "$app is the home screen"
     fun stillHome(app: String) = "$app is still the home screen"
     fun tryAgain(app: String?) = if (app != null) "Try $app again" else "Try again"
+
+    /** Debloat while it turns the ticked apps off, then its result. */
+    fun disablingApps(done: Int, of: Int) = "Turning off apps: $done of $of. Keep the TV on and connected."
+    const val DISABLING = "Disabling…"
+    const val DISABLING_NOTE = "Nothing is deleted. Turn any back on from History."
+    const val DEBLOAT_DONE = "Debloat done"
+    const val DEBLOAT_PARTLY = "Debloat partly done"
+    const val DEBLOAT_RESULT_TEXT = "Nothing was deleted; undo any of them from History."
+    fun turnedOff(done: Int, of: Int) = if (done == of) "Turned off ${apps(of)}" else "Turned off $done of ${apps(of)}"
+    fun stillOn(app: String) = "$app is still on"
 
     /** Under History in the menu, and on top of the History screen: apps Restore everything turns back on. */
     fun stillOff(n: Int) = if (n == 1) "1 app still off" else "$n apps still off"

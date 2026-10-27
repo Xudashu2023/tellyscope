@@ -71,6 +71,7 @@ import app.tellyscope.data.DeviceKind
 import app.tellyscope.data.DeviceState
 import app.tellyscope.data.ListEntry
 import app.tellyscope.data.RELEASES
+import app.tellyscope.data.ResetApp
 import app.tellyscope.data.Suggested
 import app.tellyscope.data.SuggestedGroup
 import app.tellyscope.data.Suggestions
@@ -88,14 +89,16 @@ private fun Muted(text: String) {
 /**
  * Debloat opens on the apps to turn off, under a card naming what they came from: this TV's model
  * list, else its maker's lists, unticked, else the TV's own apps to pick by hand. "Not this TV?"
- * searches every list instead. The confirm names each app before anything runs.
+ * searches every list instead. The confirm names each app before anything runs; once it's
+ * confirmed, MainActivity shows [DebloatRunScreen] in its place.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DebloatScreen(
     lists: Suggestions?,
     onPick: (String) -> Unit,
-    onDisable: (List<String>) -> Unit,
+    /** The ticked apps, name and package, in the order the confirm lists them. */
+    onDisable: (List<ResetApp>) -> Unit,
     back: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     /** The user's own list source, null for the default; set in Settings. */
@@ -148,7 +151,7 @@ fun DebloatScreen(
     if (confirming && groups != null) {
         // The dialog's list is exactly what gets disabled.
         val apps = groups.flatMap { it.packages }.filter { it.pkg in ticked }
-        DisableDialog(apps, onDisable = { confirming = false; onDisable(apps.map { it.pkg }); back() }, onDismiss = { confirming = false }, enabled = !busy)
+        DisableDialog(apps, onDisable = { confirming = false; onDisable(apps.map { ResetApp(it.pkg, it.label) }) }, onDismiss = { confirming = false }, enabled = !busy)
     }
     val use = { marked?.let { if (it != ready?.list?.id) { chosen = it; onPick(it) } }; searching = false }
     val keyboard = LocalSoftwareKeyboardController.current

@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
@@ -260,10 +261,8 @@ private fun AppList(apps: List<ResetApp>) {
 private const val SHOWN = 7
 
 /** After a run: a cookie badge, what changed, and per part what worked, with the first failure's reason. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Result(plan: ResetPlan, failed: List<ResetFailure>) {
-    val c = MaterialTheme.colorScheme
     val ok = failed.isEmpty()
     fun failures(part: ResetPart) = failed.filter { it.part == part }
     val on = plan.turnOn.size - failures(ResetPart.TurnOn).size
@@ -271,25 +270,7 @@ private fun Result(plan: ResetPlan, failed: List<ResetFailure>) {
     val home = plan.home?.takeIf { failures(ResetPart.Home).isEmpty() }
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 32.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         item {
-            Box(
-                Modifier.size(96.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(if (ok) c.primaryContainer else c.errorContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(if (ok) Icons.Default.Check else Icons.Default.Warning, contentDescription = null, Modifier.size(44.dp), tint = if (ok) c.onPrimaryContainer else c.onErrorContainer)
-            }
-            Text(
-                if (ok) Copy.RESET_DONE else Copy.RESET_PARTLY,
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 24.dp),
-            )
-            Text(
-                if (ok) Copy.resetDoneText(on + back, home?.toLabel) else Copy.resetPartlyText(failed.size),
-                style = MaterialTheme.typography.bodyMedium,
-                color = c.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 12.dp, bottom = 24.dp),
-            )
+            ResultHead(ok, if (ok) Copy.RESET_DONE else Copy.RESET_PARTLY, if (ok) Copy.resetDoneText(on + back, home?.toLabel) else Copy.resetPartlyText(failed.size))
         }
         val rows = ResetPart.entries.filter { count(plan, it) > 0 }
         itemsIndexed(rows) { i, part ->
@@ -301,16 +282,46 @@ private fun Result(plan: ResetPlan, failed: List<ResetFailure>) {
                 ResetPart.Home -> plan.home!!.let { if (miss.all { m -> m.app != null }) Copy.isHome(it.toLabel) else Copy.stillHome(it.fromLabel) }
             }
             val why = miss.firstOrNull()?.let { f -> (f.app?.takeIf { f.part != ResetPart.Home }?.let { "${it.label}: " } ?: "") + f.reason.replaceFirstChar(Char::uppercase).trimEnd('.') + "." }
-            Surface(color = c.surfaceContainerLow, shape = groupShape(i, rows.size), modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (miss.isEmpty()) Icon(HistoryIcons.TurnedOn, contentDescription = null, tint = c.primary)
-                    else Icon(Icons.Default.Warning, contentDescription = null, tint = c.error)
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(line, style = MaterialTheme.typography.bodyLarge)
-                        if (why != null) Text(why, style = MaterialTheme.typography.bodyMedium, color = c.error)
-                    }
-                }
+            ResultRow(line, why, groupShape(i, rows.size))
+        }
+    }
+}
+
+/** The top of a result, shared with Debloat's: a cookie badge, a check or a warning, the title and what happened. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun ResultHead(ok: Boolean, title: String, text: String) {
+    val c = MaterialTheme.colorScheme
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(96.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(if (ok) c.primaryContainer else c.errorContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(if (ok) Icons.Default.Check else Icons.Default.Warning, contentDescription = null, Modifier.size(44.dp), tint = if (ok) c.onPrimaryContainer else c.onErrorContainer)
+        }
+        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 24.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = c.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 12.dp, bottom = 24.dp),
+        )
+    }
+}
+
+/** One grouped row of a result: what worked, or what didn't with [why] in red under it. */
+@Composable
+internal fun ResultRow(line: String, why: String?, shape: Shape) {
+    val c = MaterialTheme.colorScheme
+    Surface(color = c.surfaceContainerLow, shape = shape, modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (why == null) Icon(HistoryIcons.TurnedOn, contentDescription = null, tint = c.primary)
+            else Icon(Icons.Default.Warning, contentDescription = null, tint = c.error)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(line, style = MaterialTheme.typography.bodyLarge)
+                if (why != null) Text(why, style = MaterialTheme.typography.bodyMedium, color = c.error)
             }
         }
     }

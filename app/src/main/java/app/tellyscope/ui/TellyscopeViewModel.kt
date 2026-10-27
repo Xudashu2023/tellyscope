@@ -36,6 +36,7 @@ import app.tellyscope.data.NetworkInfo
 import app.tellyscope.data.NotAnApp
 import app.tellyscope.data.PhoneStorage
 import app.tellyscope.data.PickedApp
+import app.tellyscope.data.ResetApp
 import app.tellyscope.data.ResetFailure
 import app.tellyscope.data.ResetPart
 import app.tellyscope.data.ResetPlan
@@ -128,6 +129,20 @@ data class DeviceUi(
     val launcherCardHidden: Boolean = true,
     /** Reset TV, while its screen is open; null otherwise. */
     val reset: ResetUi? = null,
+    /** Debloat's run, from "Yes, disable them" until its screen closes; null otherwise. */
+    val debloat: DebloatRun? = null,
+)
+
+/**
+ * Debloat turning off the ticked [apps], in order. [at] counts the ones the TV has answered for,
+ * and [failed] holds why each refused one is still on. [ran] once the last has answered; Try again
+ * runs just the failed ones.
+ */
+data class DebloatRun(
+    val apps: List<ResetApp>,
+    val at: Int = 0,
+    val failed: Map<String, String> = emptyMap(),
+    val ran: Boolean = false,
 )
 
 /**
@@ -1499,31 +1514,46 @@ class TellyscopeViewModel(
         viewModelScope.launch(Dispatchers.IO) { keyHaptics?.on = on }
     }
 
-    /** Disables the ticked suggestions one by one, each recorded in History with its own undo. */
-    fun disableSuggested(packages: List<String>) {
+    /** Disables the ticked suggestions one by one, each recorded in History with its own undo; Debloat shows how far. */
+    fun disableSuggested(apps: List<ResetApp>) {
         val id = _state.value.selectedId ?: return
-        _state.update { it.copy(device = it.device.copy(busy = DISABLING)) }
+        _state.update { it.copy(device = it.device.copy(busy = DISABLING, debloat = DebloatRun(apps))) }
         viewModelScope.launch {
-            var done = 0
             // One change for the whole list: the TV's stats are read again once, after the last app.
             source.batch(id) {
-                for (pkg in packages) {
-                    try {
-                        source.act(id, Action.Disable, pkg)
-                        done++
+                for (app in apps) {
+                    val why = try {
+                        source.act(id, Action.Disable, app.packageName)
+                        null
                     } catch (e: CancellationException) {
                         throw e
-                    } catch (_: Exception) {
-                        // The TV refused this one or dropped; the count says so.
+                    } catch (e: Exception) {
+                        // The TV refused this one or dropped; its row says why.
+                        e.message ?: "the TV refused"
+                    }
+                    updateDevice(id) { d ->
+                        d.copy(debloat = d.debloat?.let { r -> r.copy(at = r.at + 1, failed = if (why == null) r.failed else r.failed + (app.packageName to why)) })
                     }
                 }
             }
-            _notice.value = Copy.disabledSuggested(done, packages.size)
-            val apps = runCatching { source.apps(id) }.getOrNull()
+            val read = runCatching { source.apps(id) }.getOrNull()
             val history = source.history(id)
-            updateDevice(id) { it.copy(apps = apps ?: it.apps, busy = null, history = history) }
-            loadLists(id) { apps ?: source.apps(id) }
+            updateDevice(id) { it.copy(apps = read ?: it.apps, busy = null, history = history, debloat = it.debloat?.copy(ran = true)) }
+            loadLists(id) { read ?: source.apps(id) }
         }
+    }
+
+    /** Try again on Debloat's result: just the apps the TV refused. */
+    fun retryDebloat() {
+        val run = _state.value.device.debloat ?: return
+        if (_state.value.device.busy != null) return
+        disableSuggested(run.apps.filter { it.packageName in run.failed })
+    }
+
+    /** Debloat closed: a finished run is forgotten, one still going shows again when it reopens. */
+    fun closeDebloat() {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { if (it.busy == DISABLING) it else it.copy(debloat = null) }
     }
 
     /**
