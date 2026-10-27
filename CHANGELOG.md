@@ -12,6 +12,14 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.11.3 — 2026-10-28
+
+- **Fixed:** The TV's page shows the result of a change right away. [#202](../../pull/202)
+  - A stopped or turned-off app leaves Running at once, and an opened one joins it.
+  - Free storage updates right after clearing caches, installing, uninstalling or uploading.
+  - A change that fails partway shows what the TV has now.
+  - A device you allow shows under access straight away.
+
 ## 0.11.2 — 2026-10-28
 
 - **Fixed:** An unpaired TV on wireless debugging asks for the pairing code, not "didn't answer". [#200](../../pull/200)

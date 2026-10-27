@@ -246,6 +246,79 @@ class DeviceMonitorTest {
         assertTrue(tv.ran.any { it.startsWith("top") }, "ran: ${tv.ran}")
     }
 
+    @Test fun anAppStoppedOnAppsLeavesTheListAtOnce() = runTest {
+        // Apps reads processes every 10 s: a stopped app must not linger in Running until the next one.
+        val gate = StatsGate().apply { profile.value = StatsProfile.APPS }
+        val tv = PsTv("PID USER RSS NAME\n2201 u0_a87 319488 com.google.android.youtube.tv\n")
+        val readings = mutableListOf<Stats>()
+        backgroundScope.launch { DeviceMonitor(tv, gate = gate, clock = testScheduler.timeSource).stats().collect { readings += it } }
+        advanceTimeBy(10_001)
+        assertEquals(listOf(2201), readings.last().processes.map { it.pid })
+
+        advanceTimeBy(1_000)
+        gate.during(reread = true) { tv.ps = "PID USER RSS NAME\n" }
+        runCurrent()
+        assertEquals(emptyList(), readings.last().processes)
+    }
+
+    @Test fun aDebloatIsReadAgainOnceAtTheEnd() = runTest {
+        val gate = StatsGate().apply { profile.value = StatsProfile.APPS }
+        val tv = PsTv("PID USER RSS NAME\n")
+        backgroundScope.launch { DeviceMonitor(tv, gate = gate, clock = testScheduler.timeSource).stats().collect {} }
+        advanceTimeBy(1_000)
+        val before = tv.ran.size
+        // Five apps turned off one by one, each its own change inside the batch.
+        gate.during(reread = true) { repeat(5) { gate.during(reread = true) { delay(500) } } }
+        runCurrent()
+        val after = tv.ran.drop(before)
+        assertEquals(1, after.count { it.startsWith("getprop") }, "ran: $after")
+        assertEquals(1, after.count { it.startsWith("ps") }, "ran: $after")
+    }
+
+    @Test fun twoSeparateChangesAreReadTwice() = runTest {
+        val gate = StatsGate().apply { profile.value = StatsProfile.APPS }
+        val tv = PsTv("PID USER RSS NAME\n")
+        backgroundScope.launch { DeviceMonitor(tv, gate = gate, clock = testScheduler.timeSource).stats().collect {} }
+        advanceTimeBy(1_000)
+        val before = tv.ran.size
+        repeat(2) {
+            gate.during(reread = true) {}
+            advanceTimeBy(50)
+        }
+        val after = tv.ran.drop(before)
+        assertEquals(2, after.count { it.startsWith("getprop") }, "ran: $after")
+        assertEquals(2, after.count { it.startsWith("ps") }, "ran: $after")
+    }
+
+    @Test fun clearingCachesShowsTheFreedStorageAtOnce() = runTest {
+        // Storage is read once a minute; on Files or Tweaks, which read no processes, a change still brings it.
+        val gate = StatsGate().apply { profile.value = StatsProfile.OTHER }
+        var used = 9800
+        val tv = AdbShell { cmd ->
+            if (cmd.startsWith("cat /proc/stat")) ok("cpu  25 0 0 75 0 0 0 0\n${sep}MemTotal: 2000 kB\n")
+            else ok("$sep" + "Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/x 16000 $used 0 0% /data\n$sep$sep$sep")
+        }
+        val readings = mutableListOf<Stats>()
+        backgroundScope.launch { DeviceMonitor(tv, gate = gate, clock = testScheduler.timeSource).stats().collect { readings += it } }
+        advanceTimeBy(10_001)
+        assertEquals(Parsers.Storage(16000, 9800), readings.last().storage)
+
+        gate.during(reread = true) { used = 7000 }
+        runCurrent()
+        assertEquals(Parsers.Storage(16000, 7000), readings.last().storage)
+    }
+
+    @Test fun aKeyPressDoesNotReadProcessesAgain() = runTest {
+        val gate = StatsGate().apply { profile.value = StatsProfile.APPS }
+        val tv = PsTv("PID USER RSS NAME\n")
+        backgroundScope.launch { DeviceMonitor(tv, gate = gate, clock = testScheduler.timeSource).stats().collect {} }
+        advanceTimeBy(11_000)
+        val before = tv.ran.count { it.startsWith("ps") }
+        gate.during {}
+        runCurrent()
+        assertEquals(before, tv.ran.count { it.startsWith("ps") })
+    }
+
     /** Commands each screen's profile runs in its first 20 s: (fast reads, ps, top). */
     private fun TestScope.reads(profile: StatsProfile): Triple<Int, Int, Int> {
         val gate = StatsGate().apply { this.profile.value = profile }

@@ -362,9 +362,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         links.values.forEach { it.gate.paused.value = paused }
     }
 
-    /** Runs a change with that TV's stats paused, so a slow stats read can't compete with it or cut it off. */
-    private suspend fun <T> busy(deviceId: String, block: suspend () -> T): T =
-        links[deviceId]?.gate?.during(block) ?: block()
+    /**
+     * Runs a change with that TV's stats paused, so a slow stats read can't compete with it or cut it off.
+     * [reread]: it changes apps or storage, so the stats it touches are read again once it ends.
+     */
+    private suspend fun <T> busy(deviceId: String, reread: Boolean = false, block: suspend () -> T): T =
+        links[deviceId]?.gate?.during(reread, block) ?: block()
 
     override suspend fun apps(deviceId: String): List<AppInfo> {
         val session = session(deviceId)
@@ -466,13 +469,15 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         return labels[pkg] ?: AppNames.fallback(pkg)
     }
 
+    override suspend fun <T> batch(deviceId: String, block: suspend () -> T): T = busy(deviceId, reread = true, block)
+
     override suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long?): HistoryEntry =
-        busy(deviceId) { actNow(deviceId, action, packageName, undoing) }
+        busy(deviceId, reread = true) { actNow(deviceId, action, packageName, undoing) }
 
     override suspend fun makeHome(deviceId: String, packageName: String, service: Boolean): HistoryEntry =
-        busy(deviceId) { actNow(deviceId, Action.Home, packageName, null, service) }
+        busy(deviceId, reread = true) { actNow(deviceId, Action.Home, packageName, null, service) }
 
-    override suspend fun homeServiceOn(deviceId: String, packageName: String): Unit = busy(deviceId) {
+    override suspend fun homeServiceOn(deviceId: String, packageName: String): Unit = busy(deviceId, reread = true) {
         val actions = Actions(session(deviceId))
         val label = labels[packageName] ?: AppNames.fallback(packageName)
         val service = packageName.takeIf { it in serviceLaunchers }?.let { actions.homeService(it) }
@@ -636,8 +641,11 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         // Only what is still off now: the user may have turned some back on from the TV itself.
         val off = disabledPackages(deviceId)
         val key = key(deviceId)
-        return restoreEach(book.restorable(key).filter { it in off }) { pkg ->
-            act(deviceId, Action.Enable, pkg, undoing = book.openDisable(key, pkg))
+        // One change for them all: the stats are read again once, after the last app.
+        return batch(deviceId) {
+            restoreEach(book.restorable(key).filter { it in off }) { pkg ->
+                act(deviceId, Action.Enable, pkg, undoing = book.openDisable(key, pkg))
+            }
         }
     }
 
@@ -735,7 +743,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun openUpdates(deviceId: String) = Remote(session(deviceId)).openUpdates()
 
     override suspend fun launch(deviceId: String, packageName: String) =
-        busy(deviceId) { Actions(session(deviceId)).run(AdbAction.OPEN, packageName) is ActionResult.Done }
+        busy(deviceId, reread = true) { Actions(session(deviceId)).run(AdbAction.OPEN, packageName) is ActionResult.Done }
 
     override suspend fun dock(deviceId: String): List<Docked> {
         restored.await()
@@ -776,7 +784,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     }
 
     override suspend fun clearCaches(deviceId: String): Long? {
-        val freed = busy(deviceId) { Tweaks(session(deviceId)).clearCaches() }
+        val freed = busy(deviceId, reread = true) { Tweaks(session(deviceId)).clearCaches() }
         book.record(key(deviceId), System.currentTimeMillis(), Action.ClearCaches, "", TvSettings.CACHES, undo = null)
         return freed
     }
@@ -858,12 +866,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         apk: ApkInfo,
         allowDowngrade: Boolean,
         onProgress: (Progress) -> Unit,
-    ): InstallResult = busy(deviceId) { Sideload(session(deviceId)).install(apks, apk, allowDowngrade, onProgress) }
+    ): InstallResult = busy(deviceId, reread = true) { Sideload(session(deviceId)).install(apks, apk, allowDowngrade, onProgress) }
 
     override suspend fun files(deviceId: String, folder: TvFolder) = Files(session(deviceId)).list(folder)
 
     override suspend fun push(deviceId: String, folder: TvFolder, name: String, size: Long?, source: Source, onProgress: (Progress) -> Unit) =
-        busy(deviceId) { Files(session(deviceId)).push(source, size, name, folder, onProgress) }
+        busy(deviceId, reread = true) { Files(session(deviceId)).push(source, size, name, folder, onProgress) }
 
     override suspend fun pull(deviceId: String, folder: TvFolder, file: TvFile, sink: Sink, onProgress: (Progress) -> Unit) =
         busy(deviceId) { Files(session(deviceId)).pull(folder, file, sink, onProgress) }
