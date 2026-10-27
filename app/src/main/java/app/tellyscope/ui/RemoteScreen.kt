@@ -188,7 +188,7 @@ internal suspend fun repeatWhileHeld(
     }
 }
 
-/** Below this the D-pad's arrows get too small to hit; the hint under the text field goes first. */
+/** The D-pad's comfortable minimum: the hint and the gaps go first, and it only shrinks past this when nothing else is left. */
 private val DPAD_MIN = 176.dp
 private val DPAD_MAX = 272.dp
 
@@ -249,8 +249,9 @@ fun RemoteScreen(
                         val short = room < DPAD_MIN
                         val hintFits = room >= DPAD_MIN + 24.dp
                         LaunchedEffect(short, hintFits) { if (short) tight = true else if (hintFits) tight = false }
-                        // 12 dp clear above and below while there's room; the gap gives way before the pad does.
-                        DPad(live, actions.press, (room - 24.dp).coerceIn(DPAD_MIN, DPAD_MAX))
+                        // 12 dp clear above and below while there's room; the gap gives way before the pad does,
+                        // and the pad never outgrows its box, so it can't overlap the header or the keys.
+                        DPad(live, actions.press, (room - 24.dp).coerceIn(DPAD_MIN, DPAD_MAX).coerceAtMost(room))
                     }
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         RoundKey(RemoteKey.BACK, "Back", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
