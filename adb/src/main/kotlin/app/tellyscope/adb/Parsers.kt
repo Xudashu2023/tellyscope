@@ -85,6 +85,25 @@ object Parsers {
         Package(name, uid, version).takeIf { name.isNotEmpty() }
     }.distinctBy { it.name }.toList()
 
+    /**
+     * Packages the TV disabled itself, from [Commands.ENABLED_STATES]: enabled state 2 (disabled)
+     * or 4 (disabled until used). 3 is the user's own disable, which ADB can undo. Hidden system
+     * packages are listed again after the installed ones, so each package's first state counts.
+     */
+    fun disabledByTv(dump: String): Set<String> {
+        val states = mutableMapOf<String, Int>()
+        var pkg: String? = null
+        for (line in dump.lineSequence().map(String::trim)) {
+            if (line.startsWith("Package [")) pkg = line.substringAfter('[').substringBefore(']')
+            else if (line.startsWith("User 0:")) {
+                val state = line.substringAfter(" enabled=", "").substringBefore(' ').toIntOrNull()
+                if (pkg != null && state != null) states.putIfAbsent(pkg, state)
+                pkg = null
+            }
+        }
+        return states.filterValues { it == 2 || it == 4 }.keys
+    }
+
     /** [cpuPercent] is null from [psProcesses], which reads memory only. */
     data class Process(val pid: Int, val user: String, val rssKb: Long, val cpuPercent: Double?, val name: String)
 

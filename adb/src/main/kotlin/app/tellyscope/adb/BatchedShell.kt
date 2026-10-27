@@ -21,6 +21,7 @@ class BatchedShell private constructor(
                 Commands.HOME_ACTIVITIES,
                 Commands.SYSTEM_PACKAGES,
                 "pm list packages -d",
+                Commands.ENABLED_STATES,
                 Commands.USER_PACKAGES,
                 Commands.LAUNCHABLE,
                 "${Commands.TV_LAUNCHABLE} 2>/dev/null",

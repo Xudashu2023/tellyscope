@@ -507,8 +507,11 @@ private fun AppMenu(state: UiState, actions: DeviceActions) {
                 { MenuRow(Icons.Default.Info, "About & licences") { pick { about = true } } },
             )
             Spacer(Modifier.height(16.dp))
-            // Apart and in red, so it isn't one slip from an everyday item.
-            SheetGroup({ MenuRow(Icons.Default.Delete, "Forget this TV", tint = c.error) { pick { forgetting = true } } })
+            // Apart, and Forget in red, so neither is one slip from an everyday item.
+            SheetGroup(
+                { MenuRow(HistoryIcons.History, Copy.RESET_TV, Copy.RESET_KEEPS) { pick(actions.reset) } },
+                { MenuRow(Icons.Default.Delete, "Forget this TV", tint = c.error) { pick { forgetting = true } } },
+            )
         }
     }
 }

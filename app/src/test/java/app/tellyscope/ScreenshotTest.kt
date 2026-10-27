@@ -82,6 +82,15 @@ import app.tellyscope.ui.TvTab
 import app.tellyscope.data.LastKnown
 import app.tellyscope.ui.Copy
 import app.tellyscope.ui.HistoryScreen
+import app.tellyscope.data.ResetApp
+import app.tellyscope.data.ResetFailure
+import app.tellyscope.data.ResetHome
+import app.tellyscope.data.ResetPart
+import app.tellyscope.data.ResetPlan
+import app.tellyscope.data.ResetProgress
+import app.tellyscope.ui.ResetActions
+import app.tellyscope.ui.ResetScreen
+import app.tellyscope.ui.ResetUi
 import app.tellyscope.ui.TweaksBlock
 import app.tellyscope.ui.DeviceUi
 import app.tellyscope.ui.DisableDialog
@@ -583,14 +592,14 @@ class ScreenshotTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             TellyscopeTheme(dark = false, dynamic = false) {
-                DeviceTabsScreen(tabsState(), DeviceActions(advanced = { calls += "advanced" }, settings = { calls += "settings" }, history = { calls += "history" }))
+                DeviceTabsScreen(tabsState(), DeviceActions(advanced = { calls += "advanced" }, settings = { calls += "settings" }, history = { calls += "history" }, reset = { calls += "reset" }))
             }
         }
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithContentDescription("More options").performClick()
         compose.mainClock.advanceTimeBy(1_000)
         // Every group is there: this TV's items, the app's, then Forget. Rename, Forget and About open dialogs.
-        for (i in listOf("Rename this TV", Copy.HISTORY, Copy.ADVANCED_MONITOR, "Settings", Copy.SHARE, "About & licences", "Forget this TV")) compose.onNodeWithText(i).assertHasClickAction()
+        for (i in listOf("Rename this TV", Copy.HISTORY, Copy.ADVANCED_MONITOR, "Settings", Copy.SHARE, "About & licences", Copy.RESET_TV, "Forget this TV")) compose.onNodeWithText(i).assertHasClickAction()
         compose.onNodeWithText(item).performClick()
         compose.mainClock.advanceTimeBy(1_000)
         return calls
@@ -614,6 +623,8 @@ class ScreenshotTest {
         assertEquals(SHARE_TEXT, send.getStringExtra(Intent.EXTRA_TEXT))
         assertTrue(SHARE_TEXT.endsWith(RELEASES.removeSuffix("/releases")))
     }
+
+    @Test fun tabs_menuResetOpensReset() = assertEquals(listOf("reset"), pickFromMenu(Copy.RESET_TV))
 
     private fun settings(opened: MutableList<String> = mutableListOf()) = @Composable {
         val links = object : UriHandler { override fun openUri(uri: String) { opened += uri } }
@@ -690,6 +701,63 @@ class ScreenshotTest {
         compose.onNodeWithText("Nothing changed yet").assertExists()
     }
     @Test fun history_empty_dark() = history("48_history_empty", true) { deviceState() }
+
+    // Reset TV, as the frames drew it: XGIMI with 14 apps to turn on, 3 to bring back and Home to move.
+    private val resetPlan = ResetPlan(
+        turnOn = listOf(
+            "YouTube Kids" to "com.google.android.youtube.tvkids", "Google Play Movies & TV" to "com.google.android.videos",
+            "Google Play Games" to "com.google.android.play.games", "Live Channels" to "com.google.android.tv",
+            "Sports" to "com.google.android.tvrecommendations.sports", "XGIMI Assistant" to "com.xgimi.assistant",
+            "Netflix" to "com.netflix.ninja", "XGIMI Updates" to "com.xgimi.ota", "Google Play Music" to "com.google.android.music",
+            "Prime Video" to "com.amazon.amazonvideo.livingroom", "Google Play Store" to "com.android.vending",
+            "Disney+" to "com.disney.disneyplus", "XGIMI Manual" to "com.xgimi.manual", "Screensaver" to "com.google.android.backdrop",
+        ).map { (label, pkg) -> ResetApp(pkg, label) },
+        bringBack = listOf(ResetApp("com.google.android.katniss", "Google app for Android TV"), ResetApp("com.xgimi.store", "XGIMI Store"), ResetApp("com.google.android.tvrecommendations", "TV Recommendations")),
+        home = ResetHome("com.spocky.projengmenu", "Projectivy Launcher", "com.google.android.apps.tv.launcherx", "Google TV Home", service = true),
+        shippedOff = 4,
+        ownHome = "Google TV Home",
+    )
+    private fun reset(name: String, dark: Boolean, ui: ResetUi, before: () -> Unit = {}) =
+        shot(name, dark, before = before) { ResetScreen(deviceState { copy(reset = ui) }, ResetActions()) }
+    private val sportsFailed = listOf(ResetFailure(ResetPart.TurnOn, resetPlan.turnOn[4], "the TV didn't answer in time"))
+
+    @Test fun reset_found() {
+        reset("a1_reset_found", false, ResetUi(plan = resetPlan))
+        compose.onNodeWithText(Copy.resetFound(18)).assertExists()
+        compose.onNodeWithText(Copy.RESET_BUTTON).assertHasClickAction()
+    }
+    @Test fun reset_found_dark() = reset("a1_reset_found", true, ResetUi(plan = resetPlan))
+    @Test fun reset_listOpened() {
+        reset("a2_reset_list", false, ResetUi(plan = resetPlan)) { compose.onNodeWithText(Copy.turnOnApps(14)).performClick(); compose.mainClock.advanceTimeBy(1_000) }
+        // Seven of fourteen, then the rest behind Show all.
+        compose.onNodeWithText("com.netflix.ninja").assertExists()
+        compose.onNodeWithText("com.xgimi.ota").assertDoesNotExist()
+        compose.onNodeWithText(Copy.showAll(14)).assertExists()
+    }
+    @Test fun reset_listOpened_dark() = reset("a2_reset_list", true, ResetUi(plan = resetPlan)) { compose.onNodeWithText(Copy.turnOnApps(14)).performClick(); compose.mainClock.advanceTimeBy(1_000) }
+    @Test fun reset_nothing() {
+        reset("a3_reset_nothing", false, ResetUi(plan = ResetPlan(shippedOff = 4, ownHome = "Google TV Home")))
+        compose.onNodeWithText(Copy.NOTHING_TO_RESET).assertExists()
+        compose.onNodeWithText(Copy.RESET_BUTTON).assertDoesNotExist()
+    }
+    @Test fun reset_nothing_dark() = reset("a3_reset_nothing", true, ResetUi(plan = ResetPlan(shippedOff = 4, ownHome = "Google TV Home")))
+    private val running = ResetUi(plan = resetPlan, running = resetPlan, progress = ResetProgress(ResetPart.TurnOn, 6, 14))
+    @Test fun reset_running() {
+        reset("a4_reset_running", false, running)
+        compose.onNodeWithText(Copy.RESETTING).assertIsNotEnabled()
+    }
+    @Test fun reset_running_dark() = reset("a4_reset_running", true, running)
+    @Test fun reset_done() {
+        reset("a5_reset_done", false, ResetUi(plan = resetPlan, ran = true))
+        compose.onNodeWithText(Copy.RESET_DONE).assertExists()
+    }
+    @Test fun reset_done_dark() = reset("a5_reset_done", true, ResetUi(plan = resetPlan, ran = true))
+    @Test fun reset_partlyDone() {
+        reset("a6_reset_partly", false, ResetUi(plan = resetPlan, ran = true, failed = sportsFailed))
+        compose.onNodeWithText(Copy.turnedOn(13, 14)).assertExists()
+        compose.onNodeWithText(Copy.tryAgain("Sports")).assertHasClickAction()
+    }
+    @Test fun reset_partlyDone_dark() = reset("a6_reset_partly", true, ResetUi(plan = resetPlan, ran = true, failed = sportsFailed))
 
     @Test fun device_overview() {
         shot("04_device") { DeviceTabsScreen(deviceState(), DeviceActions()) }
@@ -1013,9 +1081,9 @@ class ScreenshotTest {
     private fun remoteState(apps: List<Docked> = docked, restart: Restart? = null) =
         deviceState { copy(dock = apps) }.let { s -> restart?.let { s.copy(restarting = mapOf(s.selectedId!! to it)) } ?: s }
 
-    @Test fun remote() = shot("12_remote") { RemoteScreen(remoteState(), RemoteActions()) }
+    @Test fun remote() = shot("12_remote", screen = true) { RemoteScreen(remoteState(), RemoteActions()) }
 
-    @Test fun remote_dark() = shot("12_remote", dark = true) { RemoteScreen(remoteState(), RemoteActions()) }
+    @Test fun remote_dark() = shot("12_remote", dark = true, screen = true) { RemoteScreen(remoteState(), RemoteActions()) }
 
     @Test fun remoteKeysAreIconsWithSpokenNames() {
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(remoteState(), RemoteActions()) } }
@@ -1027,35 +1095,41 @@ class ScreenshotTest {
         compose.onNodeWithText("OK").assertDoesNotExist()
     }
 
-    // Screen off (0.9): the title says how to wake it, so nothing below moves; ⋮ turns it back on.
+    // Screen off (0.9): the header says how to wake it, so nothing below moves; the filled button turns it back on.
     private fun screenOffState() = remoteState().let { it.copy(screenOff = setOf(it.selectedId!!)) }
-    @Test fun remote_screenOff() = shot("13_remote_screen_off") { RemoteScreen(screenOffState(), RemoteActions()) }
-    @Test fun remote_screenOff_dark() = shot("13_remote_screen_off", dark = true) { RemoteScreen(screenOffState(), RemoteActions()) }
+    @Test fun remote_screenOff() = shot("13_remote_screen_off", screen = true) { RemoteScreen(screenOffState(), RemoteActions()) }
+    @Test fun remote_screenOff_dark() = shot("13_remote_screen_off", dark = true, screen = true) { RemoteScreen(screenOffState(), RemoteActions()) }
     @Test fun remote_screenOffTip() = shot("13_remote_screen_off_tip", screen = true) { RemoteScreen(remoteState().copy(screenOffTip = true), RemoteActions()) }
 
     @Test fun screenOffSaysWhatATapDoes() {
         var off by mutableStateOf(false)
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(if (off) screenOffState() else remoteState(), RemoteActions()) } }
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText(Copy.SCREEN_OFF).assertExists()
+        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertExists()
         off = true
-        compose.onNodeWithText(Copy.SCREEN_ON).assertExists()
+        compose.onNodeWithContentDescription(Copy.SCREEN_ON).assertExists()
         compose.onNodeWithText(Copy.SCREEN_OFF_WAKE, substring = true).assertExists()
     }
 
     @Test fun android14HasNoScreenOff() {
         val s = remoteState().let { st -> st.copy(devices = st.devices.map { if (it.id == st.selectedId) it.copy(android = "14") else it }) }
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(s, RemoteActions()) } }
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText(Copy.SCREEN_OFF).assertDoesNotExist()
-        compose.onNodeWithText(Copy.REMOTE_RESTART).assertExists()
+        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertDoesNotExist()
+        compose.onNodeWithContentDescription(Copy.REMOTE_RESTART).assertExists()
     }
 
-    @Test fun remote_menu() = shot("13_remote_menu", screen = true, before = { compose.onNodeWithContentDescription("More options").performClick() }) {
-        RemoteScreen(remoteState(), RemoteActions())
+    /** The Remote never scrolls: on a short phone the D-pad shrinks and the dock stays on screen. */
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    @Test fun remoteFitsAShortPhone() {
+        val four = docked + listOf(Docked("org.jellyfin.androidtv", "Jellyfin"), Docked("com.spotify.tv.android", "Spotify"))
+        compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(remoteState(apps = four), RemoteActions()) } }
+        compose.onAllNodes(hasScrollAction()).assertCountEquals(0)
+        listOf("OK", "Volume up", "Spotify").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
     }
 
-    @Test fun remote_dockEmpty() = shot("12_remote_dock_empty") { RemoteScreen(remoteState(apps = emptyList()), RemoteActions()) }
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    @Test fun remote_short() = shot("12_remote_short", screen = true) { RemoteScreen(remoteState(), RemoteActions()) }
+
+    @Test fun remote_dockEmpty() = shot("12_remote_dock_empty", screen = true) { RemoteScreen(remoteState(apps = emptyList()), RemoteActions()) }
 
     /**
      * The apps' own icons, for the README's Remote shot only. Test resources, so they never reach the
@@ -1067,7 +1141,7 @@ class ScreenshotTest {
         val four = docked + listOf(Docked("org.jellyfin.androidtv", "Jellyfin"), Docked("com.spotify.tv.android", "Spotify"))
         val spotify = AppInfo("com.spotify.tv.android", "Spotify", null, false, true, null, "", launchable = true)
         val state = deviceState { copy(dock = four, apps = (apps + spotify).map { a -> realIcon(a.packageName)?.let { a.copy(icon = it) } ?: a }) }
-        shot("12_remote_dock_full") { RemoteScreen(state, RemoteActions()) }
+        shot("12_remote_dock_full", screen = true) { RemoteScreen(state, RemoteActions()) }
         // A full row has no Add tile.
         compose.onNodeWithContentDescription(Copy.ADD_TO_DOCK).assertDoesNotExist()
     }
@@ -1096,9 +1170,9 @@ class ScreenshotTest {
 
     @Test fun tiles_apps_dark() = shot("13_tiles_apps", dark = true) { DeviceTabsScreen(tilesState(), DeviceActions(), startTab = TvTab.Apps) }
 
-    @Test fun tiles_dock() = shot("13_tiles_dock") { RemoteScreen(tilesState(), RemoteActions()) }
+    @Test fun tiles_dock() = shot("13_tiles_dock", screen = true) { RemoteScreen(tilesState(), RemoteActions()) }
 
-    @Test fun tiles_dock_dark() = shot("13_tiles_dock", dark = true) { RemoteScreen(tilesState(), RemoteActions()) }
+    @Test fun tiles_dock_dark() = shot("13_tiles_dock", dark = true, screen = true) { RemoteScreen(tilesState(), RemoteActions()) }
 
     @Test fun remote_dockPicker() = shot("12_remote_dock_picker", screen = true, before = { compose.onNodeWithContentDescription(Copy.ADD_TO_DOCK).performClick() }) {
         RemoteScreen(remoteState(), RemoteActions())
@@ -1193,7 +1267,7 @@ class ScreenshotTest {
         val tv = s.selected!!.let { it.copy(model = "TCL 55C735", manufacturer = "TCL", hit = it.hit.copy(maker = "TCL", hostname = null)) }
         var disabled = emptyList<String>()
         shot("18_debloat_none", dark) {
-            DebloatScreen(Suggestions.NoList(null, ready.devices), {}, { disabled = it }, {}, tv = tv, tvApps = s.device.apps)
+            DebloatScreen(Suggestions.NoList(null, ready.devices), {}, { disabled = it.map { a -> a.packageName } }, {}, tv = tv, tvApps = s.device.apps)
         }
         compose.onNodeWithText("TCL 55C735").assertExists()
         compose.onNodeWithText("No list for this TV or its maker yet").assertExists()

@@ -40,7 +40,7 @@ class Remote(private val session: AdbSession, private val keys: KeyHelper? = nul
      */
     suspend fun home(launcher: String?): Boolean {
         if (launcher != null && COMPONENT.matches(launcher)) {
-            val r = session.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME -n '$launcher' 2>&1")
+            val r = session.shell("${Commands.OPEN_HOME} '$launcher' 2>&1")
             if (r.exitCode == 0 && "Error" !in r.output) return true
         }
         return press(RemoteKey.HOME)

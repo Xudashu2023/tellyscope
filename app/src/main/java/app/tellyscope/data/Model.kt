@@ -150,6 +150,8 @@ data class AppInfo(
     val launchable: Boolean = false,
     /** Has an icon on the TV's own home screen, not only a phone-style one. True when the TV can't say. */
     val tvHome: Boolean = true,
+    /** Off, and the TV turned it off itself rather than the user: Android won't let ADB turn it back on. */
+    val disabledByTv: Boolean = false,
 )
 
 /** Where an install from the Play Store stands, read every few seconds while the TV shows the Store. */
@@ -180,9 +182,11 @@ data class NetworkInfo(
  * Its undo is [Enable], which also makes the old launcher Home again. [HomeBack] makes the
  * launcher a switch replaced (or the TV's own) Home again, turning it on if it's off, and leaves
  * the added one on: its entry's packageName is the added launcher, the label the one now Home.
- * Its undo is [Home], which switches to the added launcher again.
+ * Its undo is [Home], which switches to the added launcher again. [Reset] is Reset TV, one entry
+ * for all of it: [HistoryEntry.previous] holds what it changed ([ResetRecord]), and its undo, [Reset]
+ * too, puts all of that back.
  */
-enum class Action { Stop, Disable, Enable, Open, Uninstall, Change, ClearCaches, Home, HomeBack }
+enum class Action { Stop, Disable, Enable, Open, Uninstall, Change, ClearCaches, Home, HomeBack, Reset }
 
 data class HistoryEntry(
     val id: Long,

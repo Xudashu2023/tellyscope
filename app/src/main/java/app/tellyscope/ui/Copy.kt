@@ -9,6 +9,8 @@ import app.tellyscope.adb.TvFolder
 import app.tellyscope.data.Action
 import app.tellyscope.data.AppNames
 import app.tellyscope.data.DeviceState
+import app.tellyscope.data.ResetPart
+import app.tellyscope.data.ResetProgress
 import app.tellyscope.data.Snapshot
 import app.tellyscope.data.TvSettings
 import app.tellyscope.data.sourceName
@@ -32,7 +34,7 @@ object Copy {
         Action.Enable -> "Turn on"
         Action.Open -> "Open"
         Action.Uninstall -> "Uninstall"
-        Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack -> error("$action has its own button")
+        Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack, Action.Reset -> error("$action has its own button")
     }
 
     fun confirm(action: Action) = when (action) {
@@ -43,7 +45,7 @@ object Copy {
         Action.Uninstall -> "Yes, uninstall it"
         Action.Home -> "Yes, switch home screen"
         Action.HomeBack -> "Yes, switch back"
-        Action.Change, Action.ClearCaches -> error("$action isn't an app action")
+        Action.Change, Action.ClearCaches, Action.Reset -> error("$action isn't an app action")
     }
 
     /**
@@ -57,7 +59,7 @@ object Copy {
             Action.Enable -> "Turns $who back on."
             Action.Open -> "Opens $who on the TV."
             Action.Uninstall -> "Removes $who and everything saved in it. This can't be undone; to get it back, install it again."
-            Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack -> error("$action isn't a one-app action")
+            Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack, Action.Reset -> error("$action isn't a one-app action")
         }
     }
 
@@ -67,8 +69,8 @@ object Copy {
         Action.Enable -> "Turned on $app"
         Action.Open -> "Opened $app"
         Action.Uninstall -> "Uninstalled $app"
-        // A setting's label is the whole sentence: "Private DNS set to …".
-        Action.Change -> app
+        // A setting's label is the whole sentence: "Private DNS set to …", as is a reset's.
+        Action.Change, Action.Reset -> app
         Action.ClearCaches -> "Cleared $app"
         Action.Home -> "Made $app Home"
         Action.HomeBack -> "Switched home back to $app"
@@ -271,12 +273,6 @@ object Copy {
 
     fun mb(v: Int) = if (v >= 1024) "%.1f GB".format(v / 1024.0) else "$v MB"
 
-    fun disabledSuggested(done: Int, of: Int) = when {
-        done == of -> "Disabled $done ${if (done == 1) "app" else "apps"}. Undo any of them from History."
-        done == 0 -> "The TV didn't disable any of them."
-        else -> "Disabled $done of $of apps; the TV refused the rest. Undo any of them from History."
-    }
-
     fun uninstallTitle(app: String) = "Uninstall $app?"
 
     /** The confirm for the launcher on Home: Home goes back first, and a failed step stops it. */
@@ -473,7 +469,7 @@ object Copy {
     const val UPDATES_OPENED = "Opened the update screen on the TV. Look at the TV to check for updates."
     const val REBOOT_REFUSED = "The TV said no to restarting. Use its own remote or power button instead."
     const val REBOOT_IGNORED = "The TV didn't restart. Use its own remote or power button instead."
-    const val REMOTE_OFFLINE = "The TV is offline. The remote works again once it reconnects."
+    const val REMOTE_OFFLINE_WAKE = "works again once it reconnects"
     const val TYPE_HINT = "Select a text box on the TV, like a search box, then type here."
     const val BACKSPACE = "Delete the last letter you typed on the TV"
     const val SCREEN_OFF = "Screen off"
@@ -515,7 +511,6 @@ object Copy {
     // Dock
 
     const val ADD_TO_DOCK = "Add to dock"
-    const val DOCK_ADD = "Add"
     const val DOCK_EMPTY = "Dock up to four TV apps, one tap to open."
     const val DOCK_PICK_TITLE = "Add an app to the dock"
     const val DOCK_PICK_HINT = "Tap an app to add it."
@@ -587,6 +582,69 @@ object Copy {
 
     /** In the TV menu and in Settings: opens Android's share sheet with the repo link. */
     const val SHARE = "Share Tellyscope"
+
+    /** Reset TV: its row in the TV menu, its screen, and what it says before, during and after. */
+    const val RESET_TV = "Reset TV to how it shipped"
+    const val RESET_KEEPS = "Keeps apps' data and sign-ins"
+
+    fun apps(n: Int) = if (n == 1) "1 app" else "$n apps"
+
+    fun resetFound(n: Int) = "$n ${if (n == 1) "change" else "changes"} since this TV left the factory"
+    const val RESET_FOUND_TEXT = "Your apps' data and sign-ins stay. Nothing has changed yet."
+    fun turnOnApps(n: Int) = "Turn on ${apps(n)}"
+    const val TURN_ON_TEXT = "Preinstalled apps turned off by hand, from any phone or tool"
+    fun bringBackApps(n: Int) = "Bring back ${apps(n)}"
+    const val BRING_BACK_TEXT = "Preinstalled apps that were uninstalled. They're still on the TV."
+    fun resetHome(to: String) = "Make $to the home screen"
+    fun resetHomeText(from: String, service: Boolean) =
+        "Instead of $from" + (if (service) ", with its accessibility service turned off" else "") + ". $from stays installed."
+
+    /** Under what Reset found: what it leaves alone. [maker] is the TV's brand, when known. */
+    fun resetLeaves(shippedOff: Int, maker: String?) =
+        (if (shippedOff > 0) "${apps(shippedOff)} ${maker ?: "the maker"} shipped switched off stay off. " else "") +
+            "Apps and launchers you installed stay installed."
+
+    const val NOTHING_TO_RESET = "Nothing to reset"
+    fun nothingToReset(ownHome: String?, maker: String?) =
+        "Every preinstalled app is on" + (ownHome?.let { ", and $it is the home screen" } ?: "") + ". " +
+            "Apps ${maker ?: "the maker"} shipped switched off stay off."
+
+    fun resetting(p: ResetProgress, home: String?) = when (p.part) {
+        ResetPart.TurnOn -> "Turning on apps: ${p.done} of ${p.of}."
+        ResetPart.BringBack -> "Bringing back apps: ${p.done} of ${p.of}."
+        ResetPart.Home -> "Making ${home ?: "the TV's own launcher"} the home screen."
+    } + " Keep the TV on and connected."
+    const val RESETTING = "Resetting…"
+    const val RESET_APPS_STALE = "Reset done, but the app list didn't refresh. Open the TV again to see it."
+    const val RESET_BUTTON = "Reset TV"
+
+    const val RESET_DONE = "TV reset to how it shipped"
+    const val RESET_PARTLY = "Reset partly done"
+    fun resetDoneText(apps: Int, home: String?) = listOfNotNull(
+        when (apps) {
+            0 -> null
+            1 -> "1 preinstalled app is back"
+            else -> "$apps preinstalled apps are back"
+        },
+        home?.let { "$it is the home screen" },
+    ).joinToString(", and ") + ". Apps' data and sign-ins stayed."
+    fun resetPartlyText(failed: Int) =
+        "${if (failed == 1) "One step" else "$failed steps"} didn't work. Everything else is back to how it shipped. Nothing was lost."
+    fun turnedOn(done: Int, of: Int) = if (done == of) "Turned on ${apps(of)}" else "Turned on $done of ${apps(of)}"
+    fun broughtBack(done: Int, of: Int) = if (done == of) "Brought back ${apps(of)}" else "Brought back $done of ${apps(of)}"
+    fun isHome(app: String) = "$app is the home screen"
+    fun stillHome(app: String) = "$app is still the home screen"
+    fun tryAgain(app: String?) = if (app != null) "Try $app again" else "Try again"
+
+    /** Debloat while it turns the ticked apps off, then its result. */
+    fun disablingApps(done: Int, of: Int) = "Turning off apps: $done of $of. Keep the TV on and connected."
+    const val DISABLING = "Disabling…"
+    const val DISABLING_NOTE = "Nothing is deleted. Turn any back on from History."
+    const val DEBLOAT_DONE = "Debloat done"
+    const val DEBLOAT_PARTLY = "Debloat partly done"
+    const val DEBLOAT_RESULT_TEXT = "Nothing was deleted; undo any of them from History."
+    fun turnedOff(done: Int, of: Int) = if (done == of) "Turned off ${apps(of)}" else "Turned off $done of ${apps(of)}"
+    fun stillOn(app: String) = "$app is still on"
 
     /** Under History in the menu, and on top of the History screen: apps Restore everything turns back on. */
     fun stillOff(n: Int) = if (n == 1) "1 app still off" else "$n apps still off"

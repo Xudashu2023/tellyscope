@@ -11,6 +11,12 @@ enum class ProtectedReason {
 
     /** Not installed by the user, so it can't be uninstalled; it can still be disabled. */
     CAME_WITH_TV,
+
+    /**
+     * The TV turned it off itself (enabled state 2 or 4, not the user's 3). Android lets ADB turn on
+     * only what the user turned off, so it stays off.
+     */
+    DISABLED_BY_TV,
 }
 
 /**

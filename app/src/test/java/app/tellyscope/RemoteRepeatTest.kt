@@ -33,7 +33,9 @@ class RemoteRepeatTest {
     @Test fun aKeyTheTvTakesAtOnceRepeatsAtAndroidsRate() = runTest {
         var presses = 0
         // Held for one second after the first repeat: the TV answering at once must not skip a list.
-        repeatWhileHeld(RemoteKey.DOWN, held = { testScheduler.currentTime < 400 + 1000 }) { presses++; true }
+        // The test clock, not the real one: a stall on the machine running the test must not add a press.
+        val clock = { testScheduler.currentTime }
+        repeatWhileHeld(RemoteKey.DOWN, held = { clock() < 400 + 1000 }, nowMs = clock) { presses++; true }
         assertEquals(1 + 1000 / REPEAT_EVERY_MS.toInt(), presses)
     }
 
@@ -45,7 +47,8 @@ class RemoteRepeatTest {
 
     @Test fun heldBackspaceRepeatsUntilReleased() = runTest {
         var presses = 0
-        repeatWhileHeld(RemoteKey.DEL, held = { testScheduler.currentTime < 400 + 500 }) { presses++; true }
+        val clock = { testScheduler.currentTime }
+        repeatWhileHeld(RemoteKey.DEL, held = { clock() < 400 + 500 }, nowMs = clock) { presses++; true }
         assertEquals(1 + 500 / REPEAT_EVERY_MS.toInt(), presses)
     }
 

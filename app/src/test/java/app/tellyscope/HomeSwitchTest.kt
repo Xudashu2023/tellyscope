@@ -9,6 +9,7 @@ import app.tellyscope.adb.AdbSession
 import app.tellyscope.adb.RemoteEntry
 import app.tellyscope.adb.ShellResult
 import app.tellyscope.data.Action
+import app.tellyscope.data.ActionFailed
 import app.tellyscope.data.HistoryBook
 import app.tellyscope.data.HistoryEntry
 import app.tellyscope.data.switchHome
@@ -35,8 +36,12 @@ private class LauncherTv(var home: String?) : AdbSession {
     val enabled = activities.keys.toMutableSet()
     val user = setOf(PROJECTIVY, FLAUNCHER)
     val services = mutableListOf<String>()
+    /** False: `am start` can't open a home screen, as on a TV that refuses it. */
+    var opens = true
+    val ran = mutableListOf<String>()
 
     override suspend fun shell(command: String): ShellResult {
+        ran += command
         val pkg = command.substringAfter("--user 0 ").substringBefore(' ')
         val quoted = command.substringAfter("'").substringBefore("'")
         return when {
@@ -50,6 +55,7 @@ private class LauncherTv(var home: String?) : AdbSession {
             command.startsWith("settings get secure enabled_accessibility_services") -> ok(services.joinToString(":").ifEmpty { "null" } + "\n")
             command.startsWith("settings put secure enabled_accessibility_services") -> ok("").also { services.clear(); services += quoted.split(':') }
             command.startsWith("settings delete secure enabled_accessibility_services") -> ok("").also { services.clear() }
+            command.startsWith("am start") && !opens -> ok("Error: Activity not started\n")
             else -> ok("")
         }
     }
@@ -131,5 +137,52 @@ class HomeSwitchTest {
         assertEquals(setOf(TV_HOME, PROJECTIVY, FLAUNCHER), tv.enabled)
         // Nothing to reverse: no launcher went off and no service came on.
         assertNull(entry.undo)
+    }
+
+    @Test fun aHomeThatDoesNotOpenStillSwitchesAndIsRecordedBeforeItSays() = runTest {
+        val tv = LauncherTv(TV_HOME).apply { opens = false }
+        val e = runCatching { switch(tv, FLAUNCHER) }.exceptionOrNull()
+        assertTrue(e?.message.orEmpty(), e is ActionFailed)
+        assertEquals("$FLAUNCHER is Home now, but it didn't open, so press Home on the remote to go there", e!!.message)
+        assertEquals("Error: Activity not started", (e as ActionFailed).details)
+        assertEquals(FLAUNCHER, tv.home)
+        assertEquals(TV_HOME, book.entries("tv").single().packageName)
+    }
+
+    private val stop = { pkg: String -> "am force-stop $pkg 2>&1" }
+    private val open = { pkg: String -> "am start -a android.intent.action.MAIN -c android.intent.category.HOME -n '$pkg' 2>&1" }
+
+    @Test fun aLauncherTheUserAddedIsClosedThenTheNewOneOpens() = runTest {
+        val tv = LauncherTv(home = FLAUNCHER)
+        switch(tv, PROJECTIVY, withService = false)
+        val set = tv.ran.indexOfFirst { it.startsWith("cmd package set-home-activity --user 0 '$PROJECTIVY/") }
+        val closed = tv.ran.indexOf(stop(FLAUNCHER))
+        val opened = tv.ran.indexOf(open(tv.activities.getValue(PROJECTIVY)))
+        assertTrue(tv.ran.toString(), set >= 0 && closed > set && opened > closed)
+        assertFalse(stop(PROJECTIVY) in tv.ran)
+    }
+
+    @Test fun theTvsOwnLauncherIsNotStoppedTurningItOffClosedIt() = runTest {
+        val tv = LauncherTv(home = TV_HOME)
+        switch(tv, FLAUNCHER)
+        val off = tv.ran.indexOfFirst { it.startsWith("pm disable-user --user 0 $TV_HOME") }
+        assertTrue(tv.ran.toString(), off >= 0 && tv.ran.indexOf(open(tv.activities.getValue(FLAUNCHER))) > off)
+        assertTrue(tv.ran.none { it.startsWith("am force-stop") })
+    }
+
+    @Test fun theNewHomeOpensOnlyAfterItsServiceIsOn() = runTest {
+        val tv = LauncherTv(home = TV_HOME)
+        switch(tv, PROJECTIVY)
+        val on = tv.ran.indexOfLast { it.startsWith("settings put secure enabled_accessibility_services") }
+        assertTrue(tv.ran.toString(), on >= 0 && tv.ran.indexOf(open(tv.activities.getValue(PROJECTIVY))) > on)
+    }
+
+    @Test fun theNewHomeOpensOnlyAfterTheOldOnesServiceIsOff() = runTest {
+        // Projectivy's service still on would pull Home straight back to it.
+        val tv = LauncherTv(home = PROJECTIVY).apply { services += PROJECTIVY_SERVICE }
+        switch(tv, FLAUNCHER)
+        val off = tv.ran.indexOfLast { it.startsWith("settings delete secure enabled_accessibility_services") || it.startsWith("settings put secure enabled_accessibility_services") }
+        val opened = tv.ran.indexOf(open(tv.activities.getValue(FLAUNCHER)))
+        assertTrue(tv.ran.toString(), off >= 0 && opened > off && tv.ran.indexOf(stop(PROJECTIVY)) > off)
     }
 }
