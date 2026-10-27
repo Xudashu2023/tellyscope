@@ -244,12 +244,13 @@ fun RemoteScreen(
                     Modifier.weight(1f).alpha(if (live) 1f else 0.38f),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         val room = minOf(maxWidth, maxHeight)
                         val short = room < DPAD_MIN
                         val hintFits = room >= DPAD_MIN + 24.dp
                         LaunchedEffect(short, hintFits) { if (short) tight = true else if (hintFits) tight = false }
-                        DPad(live, actions.press, room.coerceIn(DPAD_MIN, DPAD_MAX))
+                        // 12 dp clear above and below while there's room; the gap gives way before the pad does.
+                        DPad(live, actions.press, (room - 24.dp).coerceIn(DPAD_MIN, DPAD_MAX))
                     }
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         RoundKey(RemoteKey.BACK, "Back", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
