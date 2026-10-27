@@ -12,6 +12,8 @@ until this file has a section for its version.
 
 ## Unreleased
 
+- **Fixed:** Reset TV's buttons sit above the navigation bar, not under it. [#207](../../pull/207)
+
 ## 0.12.0 — 2026-10-28
 
 - **New:** Reset TV, in ⋮: turn your TV back to how it shipped, with one Undo. [#192](../../pull/192)
