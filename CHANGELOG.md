@@ -14,7 +14,7 @@ until this file has a section for its version.
 
 - **Improved:** Opening a TV reads its apps once, in one go, so Apps fills in sooner. [#173](../../pull/173)
 - **Improved:** Tellyscope stops polling your TV while it's in the background. [#172](../../pull/172)
-- **Improved:** The TV's page no longer redraws every app each second. [#PR](../../pull/PR)
+- **Improved:** The TV's page no longer redraws every app each second. [#174](../../pull/174)
 
 ## 0.10.0 — 2026-10-26
 
