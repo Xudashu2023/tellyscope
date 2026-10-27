@@ -6,6 +6,7 @@ import app.tellyscope.data.Action
 import app.tellyscope.data.FakeDeviceSource
 import app.tellyscope.data.HistoryBook
 import app.tellyscope.data.HistoryEntry
+import app.tellyscope.data.ResetRecord
 import app.tellyscope.data.firstHomeService
 import app.tellyscope.data.historyKey
 import app.tellyscope.data.restoreEach
@@ -260,5 +261,27 @@ class HistoryBookTest {
             }
         }.exceptionOrNull()
         assertEquals("turned 1 app back on, then stopped: connection reset", e?.message)
+    }
+
+    @Test fun aResetTurnsOnWhatTellyscopeLeftOffAndItsUndoPutsItBack() {
+        val book = HistoryBook()
+        book.record("tv", 0L, Action.Disable, "com.xgimi.ota", "XGIMI Updates", undo = Action.Enable)
+        val reset = book.record("tv", 1L, Action.Reset, "reset", ResetRecord.label(2), undo = Action.Reset,
+            previous = mapOf(ResetRecord.ON to "com.xgimi.ota,com.google.android.videos"))
+        assertEquals("Reset TV · 2 changes", reset.label)
+        assertEquals(emptyList<String>(), HistoryBook.leftDisabled(book.entries("tv")))
+        // Undone, the reset's Enables no longer count, so the earlier disable is Restore's again.
+        book.record("tv", 2L, Action.Change, "reset", "Put back what Reset TV changed", undo = null, undoing = reset.id)
+        assertEquals(listOf("com.xgimi.ota"), HistoryBook.leftDisabled(book.entries("tv")))
+    }
+
+    @Test fun amendRelabelsAPartlyUndoneReset() {
+        val book = HistoryBook()
+        val reset = book.record("tv", 0L, Action.Reset, "reset", ResetRecord.label(3), undo = Action.Reset,
+            previous = mapOf(ResetRecord.ON to "a.b,c.d", ResetRecord.BACK to "e.f"))
+        book.amend(reset.id, mapOf(ResetRecord.ON to "c.d", ResetRecord.BACK to null), ResetRecord.label(1))
+        val left = book.entries("tv").single()
+        assertEquals("Reset TV · 1 change", left.label)
+        assertEquals(1, ResetRecord.changes(left.previous))
     }
 }

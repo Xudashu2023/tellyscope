@@ -111,6 +111,8 @@ data class DeviceActions(
     val advanced: () -> Unit = {},
     /** Opens History: every change on this TV with its Undo, and Restore everything. */
     val history: () -> Unit = {},
+    /** Opens Reset TV: what it would change back to how the TV shipped, before anything changes. */
+    val reset: () -> Unit = {},
     /** Opens the TV's own system update screen. */
     val checkUpdates: () -> Unit = {},
     /** Ad-blocking Private DNS through the given hostname; null goes back to Automatic. */

@@ -70,11 +70,11 @@ class HistoryBook(private val file: File? = null) {
         save()
     }
 
-    /** Adds [extra] to entry [id]'s saved state, for a later step of the same change. */
+    /** Adds [extra] to entry [id]'s saved state, for a later step of the same change, and gives it [label] if set. */
     @Synchronized
-    fun amend(id: Long, extra: Map<String, String?>) {
+    fun amend(id: Long, extra: Map<String, String?>, label: String? = null) {
         val i = entries.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: return
-        entries[i] = entries[i].copy(previous = entries[i].previous.orEmpty() + extra)
+        entries[i] = entries[i].copy(previous = entries[i].previous.orEmpty() + extra, label = label?.let(::clean) ?: entries[i].label)
         save()
     }
 
@@ -112,9 +112,13 @@ class HistoryBook(private val file: File? = null) {
          * Packages whose last disable/enable in [history] was a disable (a home switch disables the
          * old launcher); an uninstall clears it. Newest disable first: undoing a switch makes Home
          * the launcher it replaced, so after L→A→B, Restore undoes A→B, then L→A, and ends on L.
+         * A reset nothing has undone counts as turning on each app it turned on.
          */
         fun leftDisabled(history: List<HistoryEntry>): List<String> =
-            history.filter { it.disables || it.action == Action.Enable || it.action == Action.Uninstall }
+            history.flatMap { e ->
+                if (e.action == Action.Reset && e.undoneAt == null) ResetRecord.list(e.previous, ResetRecord.ON).map { e.copy(action = Action.Enable, packageName = it) }
+                else listOf(e)
+            }.filter { it.disables || it.action == Action.Enable || it.action == Action.Uninstall }
                 .sortedBy { it.id }
                 .associate { it.packageName to it }
                 .filterValues { it.disables }

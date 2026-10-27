@@ -36,6 +36,10 @@ import app.tellyscope.data.NetworkInfo
 import app.tellyscope.data.NotAnApp
 import app.tellyscope.data.PhoneStorage
 import app.tellyscope.data.PickedApp
+import app.tellyscope.data.ResetFailure
+import app.tellyscope.data.ResetPart
+import app.tellyscope.data.ResetPlan
+import app.tellyscope.data.ResetProgress
 import app.tellyscope.data.ScanEvent
 import app.tellyscope.data.ScanHit
 import app.tellyscope.data.ScanKind
@@ -122,6 +126,23 @@ data class DeviceUi(
     val launcher: LauncherFlow? = null,
     /** Not now on the Apps tab's home-screen card, for this TV. True until read, so the card never flashes. */
     val launcherCardHidden: Boolean = true,
+    /** Reset TV, while its screen is open; null otherwise. */
+    val reset: ResetUi? = null,
+)
+
+/**
+ * Reset TV's screen. [plan] is what the TV said, null while it's read ([error] if that failed).
+ * While a run goes, [running] is what it's doing and [progress] how far. After one, [ran] is set
+ * and [failed] holds the steps that didn't work; Try again runs just those, into History's [entry].
+ */
+data class ResetUi(
+    val plan: ResetPlan? = null,
+    val error: String? = null,
+    val running: ResetPlan? = null,
+    val progress: ResetProgress? = null,
+    val ran: Boolean = false,
+    val failed: List<ResetFailure> = emptyList(),
+    val entry: Long? = null,
 )
 
 /**
@@ -271,6 +292,9 @@ const val RESTART_WAIT_MS = 60_000L
 
 /** [DeviceUi.busy] value while "Restore everything" runs. */
 const val RESTORING = "restore"
+
+/** [DeviceUi.busy] value while Reset TV runs. */
+const val RESETTING = "reset"
 
 /** [DeviceUi.busy] value while the ticked suggestions are being disabled. */
 const val DISABLING = "lists"
@@ -950,6 +974,8 @@ class TellyscopeViewModel(
             } catch (e: Exception) {
                 // Anything else (a dropped socket) still must not crash the app.
                 undoing?.let(undoInFlight::remove) // a failed Undo can be tried again
+                // A reset's Undo can get partway, so History shows where it ended.
+                if (undoing != null) runCatching { source.history(id) }.getOrNull()?.let { h -> updateDevice(id) { it.copy(history = h) } }
                 _notice.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
                 rereadAfterFailure(id)
                 return@launch
@@ -1556,6 +1582,65 @@ class TellyscopeViewModel(
     fun debloatGateOff() {
         _state.update { it.copy(debloatGate = false) }
         viewModelScope.launch(Dispatchers.IO) { gates?.set(DEBLOAT_GATE, true) }
+    }
+
+    /** Opens Reset TV and reads what it would change. */
+    fun openReset() {
+        val id = _state.value.selectedId ?: return
+        // Back during a run only closed the screen; opening it again shows that run.
+        if (_state.value.device.busy == RESETTING && _state.value.device.reset != null) return
+        updateDevice(id) { it.copy(reset = ResetUi()) }
+        viewModelScope.launch {
+            val ui = try {
+                ResetUi(plan = source.resetPlan(id))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ResetUi(error = e.message?.replaceFirstChar(Char::uppercase) ?: "The TV didn't answer.")
+            }
+            updateDevice(id) { d -> d.copy(reset = d.reset?.let { ui }) }
+        }
+    }
+
+    /** Reset TV on the selected TV: all of what it found, or with [retry] just the steps that failed. */
+    fun runReset(retry: Boolean = false) {
+        val id = _state.value.selectedId ?: return
+        val ui = _state.value.device.reset ?: return
+        val plan = ui.plan ?: return
+        if (_state.value.device.busy != null) return
+        val todo = if (!retry) plan else ResetPlan(
+            turnOn = ui.failed.filter { it.part == ResetPart.TurnOn }.mapNotNull { it.app },
+            bringBack = ui.failed.filter { it.part == ResetPart.BringBack }.mapNotNull { it.app },
+            // A Home failure with an app is its service, still on: Try again does just that.
+            home = plan.home?.takeIf { ui.failed.any { it.part == ResetPart.Home } },
+        )
+        updateDevice(id) { it.copy(busy = RESETTING, reset = ui.copy(running = todo, progress = null, failed = emptyList())) }
+        viewModelScope.launch {
+            val (entry, failed) = try {
+                source.reset(id, todo, ui.entry) { p -> updateDevice(id) { d -> d.copy(reset = d.reset?.copy(progress = p)) } }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The TV went away before any step could say: every step it was to run failed.
+                val why = e.message ?: "the TV didn't answer"
+                ui.entry to todo.turnOn.map { ResetFailure(ResetPart.TurnOn, it, why) } +
+                    todo.bringBack.map { ResetFailure(ResetPart.BringBack, it, why) } +
+                    listOfNotNull(todo.home?.let { ResetFailure(ResetPart.Home, null, why) })
+            }
+            val apps = runCatching { source.apps(id) }.getOrNull()
+            val history = source.history(id)
+            updateDevice(id) { d ->
+                d.copy(
+                    apps = apps ?: d.apps, history = history, busy = null,
+                    reset = d.reset?.copy(running = null, progress = null, ran = true, failed = failed, entry = entry ?: ui.entry),
+                )
+            }
+        }
+    }
+
+    fun closeReset() {
+        val id = _state.value.selectedId ?: return
+        updateDevice(id) { if (it.busy == RESETTING) it else it.copy(reset = null) }
     }
 
     /** History opened: its newest change is seen, so ⋮ loses its dot until the next one. */

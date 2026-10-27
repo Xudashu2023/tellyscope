@@ -28,6 +28,9 @@ until this file has a section for its version.
 ## 0.11.1 — 2026-10-27
 
 - **New:** Share Tellyscope, in ⋮ and in Settings, sends a friend the GitHub link. [#191](../../pull/191)
+- **New:** Reset TV, in ⋮: turn your TV back to how it shipped, with one Undo. [#192](../../pull/192)
+  - Turns preinstalled apps back on and brings back uninstalled ones; apps the maker shipped off stay off.
+  - Makes the TV's own launcher Home again; launchers you installed stay installed.
 
 ## 0.11.0 — 2026-10-27
 
