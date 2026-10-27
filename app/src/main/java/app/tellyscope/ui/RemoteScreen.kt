@@ -106,6 +106,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -192,6 +193,9 @@ internal suspend fun repeatWhileHeld(
 private val DPAD_MIN = 176.dp
 private val DPAD_MAX = 272.dp
 
+/** Shorter than this, mute and volume move beside the D-pad, into room it leaves empty, instead of a row under it. */
+private const val SHORT_PHONE_DP = 760
+
 /**
  * The remote, as a sheet over the TV's page with the ⋮ sheet's header. It never scrolls, which would
  * fight the drag that closes it: the D-pad takes the height that's left, so a short phone, large text
@@ -228,6 +232,7 @@ fun RemoteScreen(
     // While typing, the keyboard needs the room: volume, the hint and the dock step aside for the D-pad.
     val typing = WindowInsets.isImeVisible
     val rowGap = if (tight || typing) 12.dp else 20.dp
+    val short = LocalConfiguration.current.screenHeightDp < SHORT_PHONE_DP
 
     ModalBottomSheet(
         onDismissRequest = actions.back,
@@ -244,21 +249,37 @@ fun RemoteScreen(
                     Modifier.weight(1f).alpha(if (live) 1f else 0.38f),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        val room = minOf(maxWidth, maxHeight)
-                        val short = room < DPAD_MIN
-                        val hintFits = room >= DPAD_MIN + 24.dp
-                        LaunchedEffect(short, hintFits) { if (short) tight = true else if (hintFits) tight = false }
-                        // 12 dp clear above and below while there's room; the gap gives way before the pad does,
-                        // and the pad never outgrows its box, so it can't overlap the header or the keys.
-                        DPad(live, actions.press, (room - 24.dp).coerceIn(DPAD_MIN, DPAD_MAX).coerceAtMost(room))
+                    Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (short) RoundKey(RemoteKey.MUTE, "Mute or unmute", live, actions.press, size = 56.dp) { Icon(RemoteIcons.VolumeOff, null) }
+                        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            val room = minOf(maxWidth, maxHeight)
+                            val cramped = room < DPAD_MIN
+                            val hintFits = room >= DPAD_MIN + 24.dp
+                            LaunchedEffect(cramped, hintFits) { if (cramped) tight = true else if (hintFits) tight = false }
+                            // 12 dp clear above and below while there's room; the gap gives way before the pad does,
+                            // and the pad never outgrows its box, so it can't overlap the header or the keys.
+                            DPad(live, actions.press, (room - 24.dp).coerceIn(DPAD_MIN, DPAD_MAX).coerceAtMost(room))
+                        }
+                        // Up above down, like the rocker on the side of a real remote.
+                        if (short) Column(Modifier.width(56.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val (outer, inner) = 28.dp to 4.dp
+                            val tall = Modifier.fillMaxWidth().height(72.dp)
+                            KeySurface(
+                                RemoteKey.VOLUME_UP, "Volume up", live, actions.press, RoundedCornerShape(outer, outer, inner, inner),
+                                MaterialTheme.colorScheme.secondaryContainer, tall,
+                            ) { Icon(RemoteIcons.VolumeUp, null) }
+                            KeySurface(
+                                RemoteKey.VOLUME_DOWN, "Volume down", live, actions.press, RoundedCornerShape(inner, inner, outer, outer),
+                                MaterialTheme.colorScheme.secondaryContainer, tall,
+                            ) { Icon(RemoteIcons.VolumeDown, null) }
+                        }
                     }
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         RoundKey(RemoteKey.BACK, "Back", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
                         RoundKey(RemoteKey.HOME, "Home", live, actions.press, size = 80.dp) { Icon(Icons.Outlined.Home, null, Modifier.size(32.dp)) }
                         RoundKey(RemoteKey.MENU, "Menu", live, actions.press, Modifier.align(Alignment.CenterEnd)) { Icon(Icons.Default.Menu, null) }
                     }
-                    if (!typing) {
+                    if (!typing && !short) {
                     Spacer(Modifier.height(rowGap))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         RoundKey(RemoteKey.MUTE, "Mute or unmute", live, actions.press) { Icon(RemoteIcons.VolumeOff, null) }
