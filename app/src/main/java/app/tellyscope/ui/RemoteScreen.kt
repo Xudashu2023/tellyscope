@@ -173,13 +173,18 @@ internal const val REPEAT_EVERY_MS = 50L
  * One press, then repeats while [held] for keys that repeat. Stops at the first key the TV didn't
  * take (refused, dropped, or no TV selected).
  */
-internal suspend fun repeatWhileHeld(key: RemoteKey, held: () -> Boolean, press: suspend (RemoteKey) -> Boolean) {
+internal suspend fun repeatWhileHeld(
+    key: RemoteKey,
+    held: () -> Boolean,
+    nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
+    press: suspend (RemoteKey) -> Boolean,
+) {
     if (!press(key) || !key.repeats) return
     delay(REPEAT_AFTER_MS)
-    var last = System.nanoTime()
+    var last = nowMs()
     while (held() && press(key)) {
-        delay((REPEAT_EVERY_MS - (System.nanoTime() - last) / 1_000_000).coerceAtLeast(0))
-        last = System.nanoTime()
+        delay((REPEAT_EVERY_MS - (nowMs() - last)).coerceAtLeast(0))
+        last = nowMs()
     }
 }
 
@@ -363,7 +368,7 @@ private fun KeySurface(
                     interactions.tryEmit(p)
                     if (haptics) haptic.performHapticFeedback(HapticFeedbackType.VirtualKey)
                     var held = true
-                    scope.launch { repeatWhileHeld(key, { held }, press) }
+                    scope.launch { repeatWhileHeld(key, { held }, press = press) }
                     waitForUpOrCancellation()
                     held = false
                     interactions.tryEmit(PressInteraction.Release(p))
