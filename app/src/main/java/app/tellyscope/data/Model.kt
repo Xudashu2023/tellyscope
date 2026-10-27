@@ -150,6 +150,8 @@ data class AppInfo(
     val launchable: Boolean = false,
     /** Has an icon on the TV's own home screen, not only a phone-style one. True when the TV can't say. */
     val tvHome: Boolean = true,
+    /** Off, and the TV turned it off itself rather than the user: Android won't let ADB turn it back on. */
+    val disabledByTv: Boolean = false,
 )
 
 /** Where an install from the Play Store stands, read every few seconds while the TV shows the Store. */

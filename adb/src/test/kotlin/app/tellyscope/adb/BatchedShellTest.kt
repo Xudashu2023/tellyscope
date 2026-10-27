@@ -35,7 +35,7 @@ class BatchedShellTest {
 
     @Test fun theAppListsReadsAreOneLine() = runTest {
         val tv = FakeShell()
-        tv.answer = { if (it.startsWith("{ ")) ShellResult("${sep}0\n".repeat(10), 0) else null }
+        tv.answer = { if (it.startsWith("{ ")) ShellResult("${sep}0\n".repeat(11), 0) else null }
         val shell = BatchedShell.appList(tv)
         Actions(shell).homePackages()
         Actions(shell).homeOptions()
@@ -46,6 +46,7 @@ class BatchedShellTest {
         shell.shell(Commands.USER_PACKAGES)
         shell.shell("pm list packages --show-versioncode")
         Actions(shell).serviceOn("a/b")
+        Actions(shell).disabledByTv()
         assertEquals(1, tv.ran.size)
     }
 }

@@ -16,12 +16,13 @@ sealed interface ActionResult {
 /**
  * What [Actions.makeHome] did. [from] and [to] are the old and new home activities, for Undo;
  * [from] is null when the TV had no default home and no launcher of its own to replace. [kept]:
- * the old launcher was one the user added, so it stayed on.
+ * the old launcher was one the user added, so it stayed on. A [Failed.output] is one plain line;
+ * [Failed.details] keeps what the TV printed, for a problem report.
  */
 sealed interface HomeResult {
     data class Switched(val from: String?, val to: String, val kept: Boolean = false) : HomeResult
     data class Refused(val reason: ProtectedReason) : HomeResult
-    data class Failed(val output: String) : HomeResult
+    data class Failed(val output: String, val details: String = output) : HomeResult
 }
 
 /**
@@ -47,6 +48,7 @@ class Actions(private val shell: AdbShell) {
             Action.STOP -> exec("am force-stop $pkg", Action.OPEN)
             Action.DISABLE -> exec("pm disable-user --user 0 $pkg", Action.ENABLE) { "disabled-user" in it }
             Action.ENABLE -> exec("pm enable --user 0 $pkg", Action.DISABLE) { "enabled" in it }
+                .let { if (it is ActionResult.Failed && SHELL_REFUSED in it.output) ActionResult.Refused(ProtectedReason.DISABLED_BY_TV) else it }
             Action.OPEN -> open(pkg)
             Action.UNINSTALL -> uninstall(pkg)
         }
@@ -127,15 +129,15 @@ class Actions(private val shell: AdbShell) {
         val off = exec("pm disable-user --user 0 $old", undo = null) { "disabled-user" in it }
         if (off is ActionResult.Failed) {
             setHome(from)
-            return HomeResult.Failed(off.output)
+            return HomeResult.Failed("the TV wouldn't turn the old home screen off, so nothing changed", off.output)
         }
         if (checked || setHome(to)) return HomeResult.Switched(from, to)
         val on = exec("pm enable --user 0 $old", undo = null) { "enabled" in it }
         setHome(from)
-        return HomeResult.Failed(
-            if (on is ActionResult.Failed) "Home didn't open it, and the old home screen didn't turn back on: ${on.output}. Turn it back on from Apps → Built-in"
-            else "Home still didn't open it, so the old home screen was turned back on",
-        )
+        if (on is ActionResult.Failed) {
+            return HomeResult.Failed("Home didn't open it, and the old home screen didn't turn back on. Turn it back on from Apps → Built-in", on.output)
+        }
+        return HomeResult.Failed("Home still didn't open it, so the old home screen was turned back on")
     }
 
     /**
@@ -149,7 +151,7 @@ class Actions(private val shell: AdbShell) {
         val from = currentHome() ?: return HomeResult.Refused(ProtectedReason.UNKNOWN_HOME)
         if (from.substringBefore('/') == pkg) return HomeResult.Failed("it's already the home screen")
         val on = exec("pm enable --user 0 $pkg", undo = null) { "enabled" in it }
-        if (on is ActionResult.Failed) return HomeResult.Failed(on.output)
+        if (on is ActionResult.Failed) return HomeResult.Failed("the TV wouldn't turn it back on", on.output)
         val to = activity ?: launchers()[pkg] ?: return HomeResult.Failed("it has no home screen")
         if (!setHome(to)) {
             setHome(from)
@@ -164,6 +166,9 @@ class Actions(private val shell: AdbShell) {
         shell.shell("${Commands.SET_HOME} '$activity' 2>&1") // a nested class has a $
         return currentHome()?.substringBefore('/') == activity.substringBefore('/')
     }
+
+    /** Apps the TV turned off itself, which [run] can't turn back on ([ProtectedReason.DISABLED_BY_TV]). */
+    suspend fun disabledByTv(): Set<String> = Parsers.disabledByTv(shell.shell(Commands.ENABLED_STATES).output)
 
     /** Packages the TV can open from a launcher icon; null when it didn't say (no `cmd` before Android 7). */
     suspend fun launchable(): Set<String>? =
@@ -282,5 +287,11 @@ class Actions(private val shell: AdbShell) {
     internal companion object {
         val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+|android")
         val ACTIVITY = Regex("(${PACKAGE.pattern})/[A-Za-z0-9_.$]+")
+
+        /**
+         * Android's SecurityException when ADB tries to turn on an app the TV disabled itself:
+         * shell may only move a package between default, enabled and disabled-user.
+         */
+        const val SHELL_REFUSED = "Shell cannot change component state"
     }
 }

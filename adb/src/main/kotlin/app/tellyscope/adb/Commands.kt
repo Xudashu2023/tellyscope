@@ -40,6 +40,8 @@ internal object Commands {
     const val PACKAGES = "pm list packages -U"
     /** Apps the user installed: the only ones Tellyscope may uninstall. */
     const val USER_PACKAGES = "pm list packages -3"
+    /** Each package's `Package [name]` line and its `User 0: … enabled=N` line, for [Parsers.disabledByTv]. */
+    const val ENABLED_STATES = "dumpsys package packages | grep -e '^  Package \\[' -e '^    User 0:'"
     /** The apps the TV came with, disabled ones included. */
     const val SYSTEM_PACKAGES = "pm list packages -s"
     const val HOME_ACTIVITY = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME"
