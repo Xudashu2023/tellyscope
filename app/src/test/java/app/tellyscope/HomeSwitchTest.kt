@@ -35,6 +35,8 @@ private class LauncherTv(var home: String?) : AdbSession {
     val enabled = activities.keys.toMutableSet()
     val user = setOf(PROJECTIVY, FLAUNCHER)
     val services = mutableListOf<String>()
+    /** False: `am start` can't open a home screen, as on a TV that refuses it. */
+    var opens = true
 
     override suspend fun shell(command: String): ShellResult {
         val pkg = command.substringAfter("--user 0 ").substringBefore(' ')
@@ -50,6 +52,7 @@ private class LauncherTv(var home: String?) : AdbSession {
             command.startsWith("settings get secure enabled_accessibility_services") -> ok(services.joinToString(":").ifEmpty { "null" } + "\n")
             command.startsWith("settings put secure enabled_accessibility_services") -> ok("").also { services.clear(); services += quoted.split(':') }
             command.startsWith("settings delete secure enabled_accessibility_services") -> ok("").also { services.clear() }
+            command.startsWith("am start") && !opens -> ok("Error: Activity not started\n")
             else -> ok("")
         }
     }
@@ -131,5 +134,13 @@ class HomeSwitchTest {
         assertEquals(setOf(TV_HOME, PROJECTIVY, FLAUNCHER), tv.enabled)
         // Nothing to reverse: no launcher went off and no service came on.
         assertNull(entry.undo)
+    }
+
+    @Test fun aHomeThatDoesNotOpenStillSwitchesAndIsRecordedBeforeItSays() = runTest {
+        val tv = LauncherTv(TV_HOME).apply { opens = false }
+        val e = runCatching { switch(tv, FLAUNCHER) }.exceptionOrNull()
+        assertTrue(e?.message.orEmpty(), e is IllegalStateException && e.message!!.startsWith("$FLAUNCHER is Home now, but it didn't open"))
+        assertEquals(FLAUNCHER, tv.home)
+        assertEquals(TV_HOME, book.entries("tv").single().packageName)
     }
 }

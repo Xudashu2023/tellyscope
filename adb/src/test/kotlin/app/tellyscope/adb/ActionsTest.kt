@@ -484,4 +484,54 @@ class ActionsTest {
         val sh = FakeShell(mapOf("dumpsys package packages" to ok(dump)))
         assertEquals(setOf("com.android.nfc", "com.oem.lazy"), Actions(sh).disabledByTv())
     }
+
+    @Test fun aSwitchFromTheUsersLauncherStopsItThenOpensTheNewOne() = runTest {
+        val sh = stockOff("com.spocky.projengmenu", "me.efesser.flauncher")
+        Actions(sh).makeHome("com.spocky.projengmenu")
+        sh.ran.clear()
+        Actions(sh).makeHome("me.efesser.flauncher")
+        val set = sh.ran.indexOf("cmd package set-home-activity --user 0 'me.efesser.flauncher/.MainActivity' 2>&1")
+        val stop = sh.ran.indexOf("am force-stop com.spocky.projengmenu 2>&1")
+        val open = sh.ran.indexOf("am start -a android.intent.action.MAIN -c android.intent.category.HOME -n 'me.efesser.flauncher/.MainActivity' 2>&1")
+        assertTrue(set >= 0 && stop > set && open > stop, sh.ran.toString())
+        assertTrue(sh.ran.none { it == "am force-stop me.efesser.flauncher 2>&1" })
+    }
+
+    @Test fun aSwitchFromTheTvsOwnOpensTheNewOneAndStopsNothing() = runTest {
+        // Turning the TV's own launcher off closes it already.
+        val sh = twoLaunchers()
+        Actions(sh).makeHome("com.spocky.projengmenu")
+        val off = sh.ran.indexOf("pm disable-user --user 0 com.google.android.tvlauncher 2>&1")
+        val open = sh.ran.indexOf("am start -a android.intent.action.MAIN -c android.intent.category.HOME -n 'com.spocky.projengmenu/.ui.home.MainActivity' 2>&1")
+        assertTrue(off >= 0 && open > off, sh.ran.toString())
+        assertTrue(sh.ran.none { it.startsWith("am force-stop") })
+    }
+
+    @Test fun aHomeThatDoesNotOpenKeepsTheSwitch() = runTest {
+        val sh = twoLaunchers()
+        sh.answer.let { prev -> sh.answer = { if (it.startsWith("am start")) ok("Error: Activity not started\n") else prev(it) } }
+        val r = Actions(sh).makeHome("com.spocky.projengmenu") as HomeResult.Switched
+        assertTrue(r.left.orEmpty().startsWith("it didn't open"), r.left)
+        assertEquals("com.spocky.projengmenu", Actions(sh).homeOptions()?.current)
+        assertTrue(sh.ran.none { it.startsWith("pm enable") })
+    }
+
+    @Test fun anOldHomeThatDoesNotStopKeepsTheSwitch() = runTest {
+        val sh = stockOff("com.spocky.projengmenu", "me.efesser.flauncher")
+        Actions(sh).makeHome("com.spocky.projengmenu")
+        sh.answer.let { prev -> sh.answer = { if (it.startsWith("am force-stop")) ShellResult("Error: denied\n", 1) else prev(it) } }
+        val r = Actions(sh).makeHome("me.efesser.flauncher") as HomeResult.Switched
+        assertEquals("the old home screen didn't close (Error: denied)", r.left)
+        assertEquals("me.efesser.flauncher/.MainActivity", Actions(sh).currentHome())
+    }
+
+    @Test fun homeBackStopsTheLauncherItLeavesAndOpensTheTvsOwn() = runTest {
+        val sh = twoLaunchers()
+        Actions(sh).makeHome("com.spocky.projengmenu")
+        sh.ran.clear()
+        Actions(sh).homeBack("com.google.android.tvlauncher", "com.google.android.tvlauncher/.MainActivity")
+        val stop = sh.ran.indexOf("am force-stop com.spocky.projengmenu 2>&1")
+        val open = sh.ran.indexOf("am start -a android.intent.action.MAIN -c android.intent.category.HOME -n 'com.google.android.tvlauncher/.MainActivity' 2>&1")
+        assertTrue(stop >= 0 && open > stop, sh.ran.toString())
+    }
 }

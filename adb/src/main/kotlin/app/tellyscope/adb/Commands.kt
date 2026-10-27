@@ -46,6 +46,8 @@ internal object Commands {
     const val SYSTEM_PACKAGES = "pm list packages -s"
     const val HOME_ACTIVITY = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME"
     const val SET_HOME = "cmd package set-home-activity --user 0"
+    /** Opens a launcher's home activity, named after `-n`; Fire TV's Home key won't reach anything but Amazon's. */
+    const val OPEN_HOME = "am start -a android.intent.action.MAIN -c android.intent.category.HOME -n"
     const val HOME_ACTIVITIES = "cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.HOME"
     /** Apps with an icon on a TV home screen. */
     const val TV_LAUNCHABLE = "cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER"
