@@ -82,6 +82,15 @@ import app.tellyscope.ui.TvTab
 import app.tellyscope.data.LastKnown
 import app.tellyscope.ui.Copy
 import app.tellyscope.ui.HistoryScreen
+import app.tellyscope.data.ResetApp
+import app.tellyscope.data.ResetFailure
+import app.tellyscope.data.ResetHome
+import app.tellyscope.data.ResetPart
+import app.tellyscope.data.ResetPlan
+import app.tellyscope.data.ResetProgress
+import app.tellyscope.ui.ResetActions
+import app.tellyscope.ui.ResetScreen
+import app.tellyscope.ui.ResetUi
 import app.tellyscope.ui.TweaksBlock
 import app.tellyscope.ui.DeviceUi
 import app.tellyscope.ui.DisableDialog
@@ -583,14 +592,14 @@ class ScreenshotTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             TellyscopeTheme(dark = false, dynamic = false) {
-                DeviceTabsScreen(tabsState(), DeviceActions(advanced = { calls += "advanced" }, settings = { calls += "settings" }, history = { calls += "history" }))
+                DeviceTabsScreen(tabsState(), DeviceActions(advanced = { calls += "advanced" }, settings = { calls += "settings" }, history = { calls += "history" }, reset = { calls += "reset" }))
             }
         }
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithContentDescription("More options").performClick()
         compose.mainClock.advanceTimeBy(1_000)
         // Every group is there: this TV's items, the app's, then Forget. Rename, Forget and About open dialogs.
-        for (i in listOf("Rename this TV", Copy.HISTORY, Copy.ADVANCED_MONITOR, "Settings", Copy.SHARE, "About & licences", "Forget this TV")) compose.onNodeWithText(i).assertHasClickAction()
+        for (i in listOf("Rename this TV", Copy.HISTORY, Copy.ADVANCED_MONITOR, "Settings", Copy.SHARE, "About & licences", Copy.RESET_TV, "Forget this TV")) compose.onNodeWithText(i).assertHasClickAction()
         compose.onNodeWithText(item).performClick()
         compose.mainClock.advanceTimeBy(1_000)
         return calls
@@ -614,6 +623,8 @@ class ScreenshotTest {
         assertEquals(SHARE_TEXT, send.getStringExtra(Intent.EXTRA_TEXT))
         assertTrue(SHARE_TEXT.endsWith(RELEASES.removeSuffix("/releases")))
     }
+
+    @Test fun tabs_menuResetOpensReset() = assertEquals(listOf("reset"), pickFromMenu(Copy.RESET_TV))
 
     private fun settings(opened: MutableList<String> = mutableListOf()) = @Composable {
         val links = object : UriHandler { override fun openUri(uri: String) { opened += uri } }
@@ -690,6 +701,63 @@ class ScreenshotTest {
         compose.onNodeWithText("Nothing changed yet").assertExists()
     }
     @Test fun history_empty_dark() = history("48_history_empty", true) { deviceState() }
+
+    // Reset TV, as the frames drew it: XGIMI with 14 apps to turn on, 3 to bring back and Home to move.
+    private val resetPlan = ResetPlan(
+        turnOn = listOf(
+            "YouTube Kids" to "com.google.android.youtube.tvkids", "Google Play Movies & TV" to "com.google.android.videos",
+            "Google Play Games" to "com.google.android.play.games", "Live Channels" to "com.google.android.tv",
+            "Sports" to "com.google.android.tvrecommendations.sports", "XGIMI Assistant" to "com.xgimi.assistant",
+            "Netflix" to "com.netflix.ninja", "XGIMI Updates" to "com.xgimi.ota", "Google Play Music" to "com.google.android.music",
+            "Prime Video" to "com.amazon.amazonvideo.livingroom", "Google Play Store" to "com.android.vending",
+            "Disney+" to "com.disney.disneyplus", "XGIMI Manual" to "com.xgimi.manual", "Screensaver" to "com.google.android.backdrop",
+        ).map { (label, pkg) -> ResetApp(pkg, label) },
+        bringBack = listOf(ResetApp("com.google.android.katniss", "Google app for Android TV"), ResetApp("com.xgimi.store", "XGIMI Store"), ResetApp("com.google.android.tvrecommendations", "TV Recommendations")),
+        home = ResetHome("com.spocky.projengmenu", "Projectivy Launcher", "com.google.android.apps.tv.launcherx", "Google TV Home", service = true),
+        shippedOff = 4,
+        ownHome = "Google TV Home",
+    )
+    private fun reset(name: String, dark: Boolean, ui: ResetUi, before: () -> Unit = {}) =
+        shot(name, dark, before = before) { ResetScreen(deviceState { copy(reset = ui) }, ResetActions()) }
+    private val sportsFailed = listOf(ResetFailure(ResetPart.TurnOn, resetPlan.turnOn[4], "the TV didn't answer in time"))
+
+    @Test fun reset_found() {
+        reset("a1_reset_found", false, ResetUi(plan = resetPlan))
+        compose.onNodeWithText(Copy.resetFound(18)).assertExists()
+        compose.onNodeWithText(Copy.RESET_BUTTON).assertHasClickAction()
+    }
+    @Test fun reset_found_dark() = reset("a1_reset_found", true, ResetUi(plan = resetPlan))
+    @Test fun reset_listOpened() {
+        reset("a2_reset_list", false, ResetUi(plan = resetPlan)) { compose.onNodeWithText(Copy.turnOnApps(14)).performClick(); compose.mainClock.advanceTimeBy(1_000) }
+        // Seven of fourteen, then the rest behind Show all.
+        compose.onNodeWithText("com.netflix.ninja").assertExists()
+        compose.onNodeWithText("com.xgimi.ota").assertDoesNotExist()
+        compose.onNodeWithText(Copy.showAll(14)).assertExists()
+    }
+    @Test fun reset_listOpened_dark() = reset("a2_reset_list", true, ResetUi(plan = resetPlan)) { compose.onNodeWithText(Copy.turnOnApps(14)).performClick(); compose.mainClock.advanceTimeBy(1_000) }
+    @Test fun reset_nothing() {
+        reset("a3_reset_nothing", false, ResetUi(plan = ResetPlan(shippedOff = 4, ownHome = "Google TV Home")))
+        compose.onNodeWithText(Copy.NOTHING_TO_RESET).assertExists()
+        compose.onNodeWithText(Copy.RESET_BUTTON).assertDoesNotExist()
+    }
+    @Test fun reset_nothing_dark() = reset("a3_reset_nothing", true, ResetUi(plan = ResetPlan(shippedOff = 4, ownHome = "Google TV Home")))
+    private val running = ResetUi(plan = resetPlan, running = resetPlan, progress = ResetProgress(ResetPart.TurnOn, 6, 14))
+    @Test fun reset_running() {
+        reset("a4_reset_running", false, running)
+        compose.onNodeWithText(Copy.RESETTING).assertIsNotEnabled()
+    }
+    @Test fun reset_running_dark() = reset("a4_reset_running", true, running)
+    @Test fun reset_done() {
+        reset("a5_reset_done", false, ResetUi(plan = resetPlan, ran = true))
+        compose.onNodeWithText(Copy.RESET_DONE).assertExists()
+    }
+    @Test fun reset_done_dark() = reset("a5_reset_done", true, ResetUi(plan = resetPlan, ran = true))
+    @Test fun reset_partlyDone() {
+        reset("a6_reset_partly", false, ResetUi(plan = resetPlan, ran = true, failed = sportsFailed))
+        compose.onNodeWithText(Copy.turnedOn(13, 14)).assertExists()
+        compose.onNodeWithText(Copy.tryAgain("Sports")).assertHasClickAction()
+    }
+    @Test fun reset_partlyDone_dark() = reset("a6_reset_partly", true, ResetUi(plan = resetPlan, ran = true, failed = sportsFailed))
 
     @Test fun device_overview() {
         shot("04_device") { DeviceTabsScreen(deviceState(), DeviceActions()) }

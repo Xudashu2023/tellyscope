@@ -9,6 +9,8 @@ import app.tellyscope.adb.TvFolder
 import app.tellyscope.data.Action
 import app.tellyscope.data.AppNames
 import app.tellyscope.data.DeviceState
+import app.tellyscope.data.ResetPart
+import app.tellyscope.data.ResetProgress
 import app.tellyscope.data.Snapshot
 import app.tellyscope.data.TvSettings
 import app.tellyscope.data.sourceName
@@ -32,7 +34,7 @@ object Copy {
         Action.Enable -> "Turn on"
         Action.Open -> "Open"
         Action.Uninstall -> "Uninstall"
-        Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack -> error("$action has its own button")
+        Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack, Action.Reset -> error("$action has its own button")
     }
 
     fun confirm(action: Action) = when (action) {
@@ -43,7 +45,7 @@ object Copy {
         Action.Uninstall -> "Yes, uninstall it"
         Action.Home -> "Yes, switch home screen"
         Action.HomeBack -> "Yes, switch back"
-        Action.Change, Action.ClearCaches -> error("$action isn't an app action")
+        Action.Change, Action.ClearCaches, Action.Reset -> error("$action isn't an app action")
     }
 
     /**
@@ -57,7 +59,7 @@ object Copy {
             Action.Enable -> "Turns $who back on."
             Action.Open -> "Opens $who on the TV."
             Action.Uninstall -> "Removes $who and everything saved in it. This can't be undone; to get it back, install it again."
-            Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack -> error("$action isn't a one-app action")
+            Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack, Action.Reset -> error("$action isn't a one-app action")
         }
     }
 
@@ -67,8 +69,8 @@ object Copy {
         Action.Enable -> "Turned on $app"
         Action.Open -> "Opened $app"
         Action.Uninstall -> "Uninstalled $app"
-        // A setting's label is the whole sentence: "Private DNS set to …".
-        Action.Change -> app
+        // A setting's label is the whole sentence: "Private DNS set to …", as is a reset's.
+        Action.Change, Action.Reset -> app
         Action.ClearCaches -> "Cleared $app"
         Action.Home -> "Made $app Home"
         Action.HomeBack -> "Switched home back to $app"
@@ -587,6 +589,58 @@ object Copy {
 
     /** In the TV menu and in Settings: opens Android's share sheet with the repo link. */
     const val SHARE = "Share Tellyscope"
+
+    /** Reset TV: its row in the TV menu, its screen, and what it says before, during and after. */
+    const val RESET_TV = "Reset TV to how it shipped"
+    const val RESET_KEEPS = "Keeps apps' data and sign-ins"
+
+    fun apps(n: Int) = if (n == 1) "1 app" else "$n apps"
+
+    fun resetFound(n: Int) = "$n ${if (n == 1) "change" else "changes"} since this TV left the factory"
+    const val RESET_FOUND_TEXT = "Your apps' data and sign-ins stay. Nothing has changed yet."
+    fun turnOnApps(n: Int) = "Turn on ${apps(n)}"
+    const val TURN_ON_TEXT = "Preinstalled apps turned off by hand, from any phone or tool"
+    fun bringBackApps(n: Int) = "Bring back ${apps(n)}"
+    const val BRING_BACK_TEXT = "Preinstalled apps that were uninstalled. They're still on the TV."
+    fun resetHome(to: String) = "Make $to the home screen"
+    fun resetHomeText(from: String, service: Boolean) =
+        "Instead of $from" + (if (service) ", with its accessibility service turned off" else "") + ". $from stays installed."
+
+    /** Under what Reset found: what it leaves alone. [maker] is the TV's brand, when known. */
+    fun resetLeaves(shippedOff: Int, maker: String?) =
+        (if (shippedOff > 0) "${apps(shippedOff)} ${maker ?: "the maker"} shipped switched off stay off. " else "") +
+            "Apps and launchers you installed stay installed."
+
+    const val NOTHING_TO_RESET = "Nothing to reset"
+    fun nothingToReset(ownHome: String?, maker: String?) =
+        "Every preinstalled app is on" + (ownHome?.let { ", and $it is the home screen" } ?: "") + ". " +
+            "Apps ${maker ?: "the maker"} shipped switched off stay off."
+
+    fun resetting(p: ResetProgress, home: String?) = when (p.part) {
+        ResetPart.TurnOn -> "Turning on apps: ${p.done} of ${p.of}."
+        ResetPart.BringBack -> "Bringing back apps: ${p.done} of ${p.of}."
+        ResetPart.Home -> "Making ${home ?: "the TV's own launcher"} the home screen."
+    } + " Keep the TV on and connected."
+    const val RESETTING = "Resetting…"
+    const val RESET_BUTTON = "Reset TV"
+
+    const val RESET_DONE = "TV reset to how it shipped"
+    const val RESET_PARTLY = "Reset partly done"
+    fun resetDoneText(apps: Int, home: String?) = listOfNotNull(
+        when (apps) {
+            0 -> null
+            1 -> "1 preinstalled app is back"
+            else -> "$apps preinstalled apps are back"
+        },
+        home?.let { "$it is the home screen" },
+    ).joinToString(", and ") + ". Apps' data and sign-ins stayed."
+    fun resetPartlyText(failed: Int) =
+        "${if (failed == 1) "One step" else "$failed steps"} didn't work. Everything else is back to how it shipped. Nothing was lost."
+    fun turnedOn(done: Int, of: Int) = if (done == of) "Turned on ${apps(of)}" else "Turned on $done of ${apps(of)}"
+    fun broughtBack(done: Int, of: Int) = if (done == of) "Brought back ${apps(of)}" else "Brought back $done of ${apps(of)}"
+    fun isHome(app: String) = "$app is the home screen"
+    fun stillHome(app: String) = "$app is still the home screen"
+    fun tryAgain(app: String?) = if (app != null) "Try $app again" else "Try again"
 
     /** Under History in the menu, and on top of the History screen: apps Restore everything turns back on. */
     fun stillOff(n: Int) = if (n == 1) "1 app still off" else "$n apps still off"

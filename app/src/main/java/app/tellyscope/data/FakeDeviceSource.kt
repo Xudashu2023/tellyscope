@@ -202,13 +202,19 @@ class FakeDeviceSource(
         delay(400)
         val list = appsFor(deviceId)
         if (!book.hasBaseline(deviceId)) book.setBaseline(deviceId, list.filter { !it.enabled }.map { it.packageName }.toSet())
+        if (action == Action.Reset) {
+            val reset = book.entries(deviceId).first { it.id == undoing }
+            val on = ResetRecord.list(reset.previous, ResetRecord.ON)
+            list.replaceAll { if (it.packageName in on) it.copy(enabled = false) else it }
+            return book.record(deviceId, clock(), Action.Change, packageName, "Put back what Reset TV changed", null, undoing)
+        }
         val i = list.indexOfFirst { it.packageName == packageName }
         val app = list[i]
         when (action) {
             Action.Disable -> list[i] = app.copy(enabled = false)
             Action.Enable -> list[i] = app.copy(enabled = true)
             Action.Uninstall -> list.removeAt(i)
-            Action.Stop, Action.Open, Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack -> Unit
+            Action.Stop, Action.Open, Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack, Action.Reset -> Unit
         }
         val undo = when (action) {
             Action.Stop -> Action.Open
@@ -216,7 +222,7 @@ class FakeDeviceSource(
             Action.Enable -> Action.Disable
             Action.Home -> Action.Enable
             Action.HomeBack -> Action.Home
-            Action.Open, Action.Uninstall, Action.Change, Action.ClearCaches -> null
+            Action.Open, Action.Uninstall, Action.Change, Action.ClearCaches, Action.Reset -> null
         }
         return book.record(deviceId, clock(), action, packageName, app.label, undo, undoing)
     }
@@ -228,6 +234,26 @@ class FakeDeviceSource(
         return restoreEach(book.restorable(deviceId).filter { it in off }) { pkg ->
             act(deviceId, Action.Enable, pkg, undoing = book.openDisable(deviceId, pkg))
         }
+    }
+
+    /** The demo TV's apps that are off and came with it, as if someone had turned them off by hand. */
+    override suspend fun resetPlan(deviceId: String): ResetPlan {
+        delay(400)
+        val off = appsFor(deviceId).filter { it.system && !it.enabled }.map { ResetApp(it.packageName, it.label) }
+        return ResetPlan(turnOn = off, ownHome = "Google TV Home")
+    }
+
+    override suspend fun reset(deviceId: String, plan: ResetPlan, into: Long?, onProgress: (ResetProgress) -> Unit): Pair<Long?, List<ResetFailure>> {
+        val list = appsFor(deviceId)
+        plan.turnOn.forEachIndexed { i, app ->
+            onProgress(ResetProgress(ResetPart.TurnOn, i, plan.turnOn.size))
+            delay(300)
+            list.replaceAll { if (it.packageName == app.packageName) it.copy(enabled = true) else it }
+        }
+        if (plan.turnOn.isEmpty()) return into to emptyList()
+        val on = plan.turnOn.joinToString(",") { it.packageName }
+        val entry = book.record(deviceId, clock(), Action.Reset, "reset", ResetRecord.label(plan.changes), Action.Reset, previous = mapOf(ResetRecord.ON to on))
+        return entry.id to emptyList()
     }
 
     override suspend fun installed(deviceId: String, packageName: String): InstalledVersion? =

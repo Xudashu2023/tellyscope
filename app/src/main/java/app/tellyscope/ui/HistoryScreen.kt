@@ -199,6 +199,7 @@ internal object HistoryIcons {
         Action.Uninstall, Action.ClearCaches -> Icons.Default.Delete
         Action.Home, Action.HomeBack -> Icons.Default.Home
         Action.Change -> Icons.Default.Settings
+        Action.Reset -> History
     }
 
     private fun icon(name: String, path: String, fill: PathFillType = PathFillType.NonZero) = ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)

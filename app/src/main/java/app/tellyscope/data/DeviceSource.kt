@@ -105,6 +105,16 @@ interface DeviceSource {
     /** Turns back on every app Tellyscope disabled, and nothing that was off before. */
     suspend fun restoreAll(deviceId: String): List<HistoryEntry>
 
+    /** What Reset TV would change, read from the TV itself, whoever changed it. Throws if it's gone. */
+    suspend fun resetPlan(deviceId: String): ResetPlan = ResetPlan()
+
+    /**
+     * Runs [plan], reporting each step to [onProgress], and goes on past a step that fails. All of
+     * it is one History entry; a retry ([into], that entry's id) adds to it. Returns the entry's id,
+     * null when nothing changed, and what failed.
+     */
+    suspend fun reset(deviceId: String, plan: ResetPlan, into: Long? = null, onProgress: (ResetProgress) -> Unit = {}): Pair<Long?, List<ResetFailure>> = null to emptyList()
+
     /** The version of [packageName] on the TV, or null when it isn't installed. */
     suspend fun installed(deviceId: String, packageName: String): InstalledVersion?
 
