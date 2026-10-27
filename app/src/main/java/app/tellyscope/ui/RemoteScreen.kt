@@ -2,8 +2,6 @@
 
 package app.tellyscope.ui
 
-import android.view.WindowManager
-import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,7 +21,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,16 +28,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -50,7 +43,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -72,7 +64,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -81,13 +72,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.ripple
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -130,6 +119,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -143,6 +133,16 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import app.tellyscope.data.Device
 
 data class RemoteActions(
     /** Suspends until the TV answers, so a held key never queues up presses. False when it didn't take the key. */
@@ -188,6 +188,15 @@ internal suspend fun repeatWhileHeld(
     }
 }
 
+/** Below this the D-pad's arrows get too small to hit; the hint under the text field goes first. */
+private val DPAD_MIN = 176.dp
+private val DPAD_MAX = 272.dp
+
+/**
+ * The remote, as a sheet over the TV's page with the ⋮ sheet's header. It never scrolls, which would
+ * fight the drag that closes it: the D-pad takes the height that's left, so a short phone, large text
+ * or the keyboard shrink it instead of pushing the dock off-screen.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RemoteScreen(
@@ -201,17 +210,9 @@ fun RemoteScreen(
     val screenOff = device.id in state.screenOff
     // Android 14 moved the call that turns the picture off out of the shell's reach.
     val screenControl = (device.android?.substringBefore('.')?.toIntOrNull() ?: 0) < 14 || screenOff
-    // The keyboard shrinks this screen instead of panning the window, which jumped on every keystroke.
-    val window = LocalActivity.current?.window
-    DisposableEffect(window) {
-        if (window == null) return@DisposableEffect onDispose {}
-        val before = window.attributes.softInputMode
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        onDispose { window.setSoftInputMode(before) }
-    }
     var confirmReboot by rememberSaveable { mutableStateOf(false) }
     if (confirmReboot) RebootDialog(onRestart = { confirmReboot = false; actions.reboot() }, onDismiss = { confirmReboot = false })
-    // Hide keeps a restart in the top bar; the dialog comes back when the wait moves on, or on a tap there.
+    // Hide keeps a restart in the header; the dialog comes back when the wait moves on, or on a tap there.
     val stage = restart?.let { "${it.since}/${it.waitFrom}/${it.phase(state.clock())}" }
     var hidden by rememberSaveable { mutableStateOf<String?>(null) }
     if (restart != null && hidden != stage) {
@@ -222,94 +223,135 @@ fun RemoteScreen(
             onStop = actions.stopWaiting,
         )
     }
+    // Set once the D-pad hits its floor, and cleared once there's room for the hint again.
+    var tight by remember { mutableStateOf(false) }
+    // While typing, the keyboard needs the room: volume, the hint and the dock step aside for the D-pad.
+    val typing = WindowInsets.isImeVisible
+    val rowGap = if (tight || typing) 12.dp else 20.dp
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                title = {
-                    when {
-                        restart != null && hidden == stage -> RestartStatus(late = restart.phase(state.clock()) != Restart.Phase.Waiting, onClick = { hidden = null })
-                        // In place of the title, so the keys below never move.
-                        screenOff -> ScreenOffStatus()
-                        else -> Text("Remote")
-                    }
-                },
-                navigationIcon = {
-                    // A chevron, not an arrow, so it can't be mistaken for the TV's Back key.
-                    IconButton(onClick = actions.back) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Back to the TV's page") }
-                },
-                actions = { RemoteMenu(screenControl, screenOff, live, showTip = state.screenOffTip, actions, onRestart = { confirmReboot = true }) },
-            )
-        },
-        // Pinned under the keys, out of a thumb's way; the keyboard covers it while typing.
-        bottomBar = { if (!WindowInsets.isImeVisible) DockBand(state.device.dock, state.device.apps, name(device), live, actions) },
-    ) { pad ->
-        Column(
-            Modifier.fillMaxSize().padding(pad).imePadding().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            if (restart == null && device.state != DeviceState.Online) Text(
-                Copy.REMOTE_OFFLINE,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            CompositionLocalProvider(LocalKeyHaptics provides state.keyHaptics) { Column(
-                Modifier.alpha(if (live) 1f else 0.38f),
+    ModalBottomSheet(
+        onDismissRequest = actions.back,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        dragHandle = { HandleRow(screenControl, screenOff, live, showTip = state.screenOffTip, actions, onRestart = { confirmReboot = true }) },
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                DPad(live, actions.press)
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    RoundKey(RemoteKey.BACK, "Back", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-                    RoundKey(RemoteKey.HOME, "Home", live, actions.press, size = 80.dp) { Icon(Icons.Outlined.Home, null, Modifier.size(32.dp)) }
-                    RoundKey(RemoteKey.MENU, "Menu", live, actions.press, Modifier.align(Alignment.CenterEnd)) { Icon(Icons.Default.Menu, null) }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RoundKey(RemoteKey.MUTE, "Mute or unmute", live, actions.press) { Icon(RemoteIcons.VolumeOff, null) }
-                    // One split pill: two halves of the same key, so the gap stays narrow.
-                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val (outer, inner) = 32.dp to 4.dp
-                        KeySurface(
-                            RemoteKey.VOLUME_DOWN, "Volume down", live, actions.press, RoundedCornerShape(outer, inner, inner, outer),
-                            MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
-                        ) { Icon(RemoteIcons.VolumeDown, null) }
-                        KeySurface(
-                            RemoteKey.VOLUME_UP, "Volume up", live, actions.press, RoundedCornerShape(inner, outer, outer, inner),
-                            MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
-                        ) { Icon(RemoteIcons.VolumeUp, null) }
+                RemoteHeader(state, device, restart, screenOff, onRestartTap = { hidden = null })
+                CompositionLocalProvider(LocalKeyHaptics provides state.keyHaptics) { Column(
+                    Modifier.weight(1f).alpha(if (live) 1f else 0.38f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                        val room = minOf(maxWidth, maxHeight)
+                        val short = room < DPAD_MIN
+                        val hintFits = room >= DPAD_MIN + 24.dp
+                        LaunchedEffect(short, hintFits) { if (short) tight = true else if (hintFits) tight = false }
+                        DPad(live, actions.press, room.coerceIn(DPAD_MIN, DPAD_MAX))
                     }
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        RoundKey(RemoteKey.BACK, "Back", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                        RoundKey(RemoteKey.HOME, "Home", live, actions.press, size = 80.dp) { Icon(Icons.Outlined.Home, null, Modifier.size(32.dp)) }
+                        RoundKey(RemoteKey.MENU, "Menu", live, actions.press, Modifier.align(Alignment.CenterEnd)) { Icon(Icons.Default.Menu, null) }
+                    }
+                    if (!typing) {
+                    Spacer(Modifier.height(rowGap))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RoundKey(RemoteKey.MUTE, "Mute or unmute", live, actions.press) { Icon(RemoteIcons.VolumeOff, null) }
+                        // One split pill: two halves of the same key, so the gap stays narrow.
+                        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val (outer, inner) = 32.dp to 4.dp
+                            KeySurface(
+                                RemoteKey.VOLUME_DOWN, "Volume down", live, actions.press, RoundedCornerShape(outer, inner, inner, outer),
+                                MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
+                            ) { Icon(RemoteIcons.VolumeDown, null) }
+                            KeySurface(
+                                RemoteKey.VOLUME_UP, "Volume up", live, actions.press, RoundedCornerShape(inner, outer, outer, inner),
+                                MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
+                            ) { Icon(RemoteIcons.VolumeUp, null) }
+                        }
+                    }
+                    }
+                    // Twice the usual gap, so a thumb aiming at a volume key doesn't land in the text box.
+                    Spacer(Modifier.height(if (typing) rowGap else 24.dp))
+                    Keyboard(live, actions.type, actions.press, hint = !tight && !typing)
+                } }
+                // Under the keys, out of a thumb's way.
+                if (!typing) {
+                    Spacer(Modifier.height(if (tight) 8.dp else 16.dp))
+                    DockBand(state.device.dock, state.device.apps, name(device), live, actions)
                 }
-                // Twice the usual gap, so a thumb aiming at a volume key doesn't land in the text box.
-                Box(Modifier.padding(top = 20.dp)) { Keyboard(live, actions.type, actions.press) }
-            } }
+            }
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
 
-/** The four arrows around a big OK, shaped like the remote in the user's other hand. */
+/** The ⋮ sheet's header: the TV, and a second line for its state, a screen that's off or a restart. */
 @Composable
-private fun DPad(enabled: Boolean, press: suspend (RemoteKey) -> Boolean) {
-    Surface(Modifier.size(272.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+private fun RemoteHeader(state: UiState, device: Device, restart: Restart?, screenOff: Boolean, onRestartTap: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Cookie(device, 48.dp)
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(name(device), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            when {
+                restart != null -> RestartStatus(late = restart.phase(state.clock()) != Restart.Phase.Waiting, onClick = onRestartTap)
+                screenOff -> StateLine(Copy.SCREEN_OFF, Copy.SCREEN_OFF_WAKE)
+                device.state != DeviceState.Online -> StateLine(Copy.state(device.state), Copy.REMOTE_OFFLINE_WAKE)
+                else -> {
+                    val health = state.device.snapshot?.let { Copy.health(it, heaviest(it, state.device.apps)).text }
+                    val line = listOf(makerLine(device), health.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
+                    if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/** "**Screen off** · tap any key to wake": the state, then what to do about it. */
+@Composable
+private fun StateLine(what: String, then: String) {
+    Text(
+        buildAnnotatedString {
+            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)) { append(what) }
+            append(" · $then")
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** The four arrows around a big OK, shaped like the remote in the user's other hand; [size] across. */
+@Composable
+private fun DPad(enabled: Boolean, press: suspend (RemoteKey) -> Boolean, size: Dp = DPAD_MAX) {
+    // Every part keeps its share of the full-size pad, so a smaller pad is the same pad, scaled.
+    val scale = size / DPAD_MAX
+    Surface(Modifier.size(size), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Box {
-            val arrow = Modifier.size(80.dp)
+            val arrow = Modifier.size(80.dp * scale)
+            val glyph = Modifier.size(40.dp * scale)
             val tint = MaterialTheme.colorScheme.onSurface
             KeySurface(RemoteKey.UP, "Up", enabled, press, CircleShape, Color.Transparent, arrow.align(Alignment.TopCenter)) {
-                Icon(Icons.Default.KeyboardArrowUp, null, Modifier.size(40.dp), tint = tint)
+                Icon(Icons.Default.KeyboardArrowUp, null, glyph, tint = tint)
             }
             KeySurface(RemoteKey.DOWN, "Down", enabled, press, CircleShape, Color.Transparent, arrow.align(Alignment.BottomCenter)) {
-                Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(40.dp), tint = tint)
+                Icon(Icons.Default.KeyboardArrowDown, null, glyph, tint = tint)
             }
             KeySurface(RemoteKey.LEFT, "Left", enabled, press, CircleShape, Color.Transparent, arrow.align(Alignment.CenterStart)) {
-                Icon(Icons.Default.KeyboardArrowLeft, null, Modifier.size(40.dp), tint = tint)
+                Icon(Icons.Default.KeyboardArrowLeft, null, glyph, tint = tint)
             }
             KeySurface(RemoteKey.RIGHT, "Right", enabled, press, CircleShape, Color.Transparent, arrow.align(Alignment.CenterEnd)) {
-                Icon(Icons.Default.KeyboardArrowRight, null, Modifier.size(40.dp), tint = tint)
+                Icon(Icons.Default.KeyboardArrowRight, null, glyph, tint = tint)
             }
             KeySurface(
                 RemoteKey.OK, "OK", enabled, press, CircleShape, MaterialTheme.colorScheme.primary,
-                Modifier.size(112.dp).align(Alignment.Center),
+                Modifier.size(112.dp * scale).align(Alignment.Center),
             ) {}
         }
     }
@@ -379,9 +421,10 @@ private fun KeySurface(
     }
 }
 
+/** [hint] off on a screen too short for it; an error still shows. */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun Keyboard(enabled: Boolean, type: (String) -> String?, press: suspend (RemoteKey) -> Boolean) {
+private fun Keyboard(enabled: Boolean, type: (String) -> String?, press: suspend (RemoteKey) -> Boolean, hint: Boolean = true) {
     var text by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     fun send() {
@@ -393,7 +436,7 @@ private fun Keyboard(enabled: Boolean, type: (String) -> String?, press: suspend
         onValueChange = { text = it; error = null },
         enabled = enabled,
         label = { Text("Type on the TV") },
-        supportingText = { Text(error ?: Copy.TYPE_HINT) },
+        supportingText = if (error != null || hint) ({ Text(error ?: Copy.TYPE_HINT) }) else null,
         isError = error != null,
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -495,11 +538,13 @@ private fun StatusShape(icon: ImageVector, container: Color, content: Color) {
     }
 }
 
-/** Screen off (or on again) and Restart, behind ⋮. Explains Screen off on the first visit. */
+/**
+ * The sheet's drag handle, with Screen off (or on again) and Restart beside it, so the TV's name
+ * keeps the header's full width. Explains Screen off on the first visit.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RemoteMenu(screenControl: Boolean, off: Boolean, live: Boolean, showTip: Boolean, actions: RemoteActions, onRestart: () -> Unit) {
-    var open by remember { mutableStateOf(false) }
+private fun HandleRow(screenControl: Boolean, off: Boolean, live: Boolean, showTip: Boolean, actions: RemoteActions, onRestart: () -> Unit) {
     val tip = rememberTooltipState(isPersistent = true)
     LaunchedEffect(showTip, screenControl) {
         if (showTip && screenControl) {
@@ -507,78 +552,53 @@ private fun RemoteMenu(screenControl: Boolean, off: Boolean, live: Boolean, show
             actions.screenOffTipSeen()
         }
     }
-    Box {
-        TooltipBox(
-            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
-            tooltip = {
-                PlainTooltip {
-                    Column(Modifier.padding(vertical = 4.dp)) {
-                        Text(Copy.SCREEN_OFF, style = MaterialTheme.typography.labelLarge)
-                        Text(Copy.SCREEN_OFF_TIP)
+    Box(Modifier.fillMaxWidth().padding(end = 12.dp)) {
+        BottomSheetDefaults.DragHandle(Modifier.align(Alignment.Center))
+        Row(Modifier.align(Alignment.CenterEnd).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (screenControl) TooltipBox(
+                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
+                tooltip = {
+                    PlainTooltip {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            Text(Copy.SCREEN_OFF, style = MaterialTheme.typography.labelLarge)
+                            Text(Copy.SCREEN_OFF_TIP)
+                        }
                     }
-                }
-            },
-            state = tip,
-            enableUserInput = false,
-        ) {
-            IconButton(onClick = { open = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
-        }
-        // One block, like the dock's menu and the TV menu's groups.
-        DropdownMenu(open, onDismissRequest = { open = false }, shape = MaterialTheme.shapes.large) {
-            MenuBlock {
-                if (screenControl) DropdownMenuItem(
-                    text = { Text(if (off) Copy.SCREEN_ON else Copy.SCREEN_OFF) },
-                    leadingIcon = { Icon(RemoteIcons.TvOff, null) },
-                    enabled = live,
-                    onClick = { open = false; actions.screenOff(!off) },
-                )
-                DropdownMenuItem(
-                    text = { Text(Copy.REMOTE_RESTART) },
-                    leadingIcon = { Icon(RemoteIcons.RestartAlt, null) },
-                    enabled = live,
-                    onClick = { open = false; onRestart() },
-                )
+                },
+                state = tip,
+                enableUserInput = false,
+            ) {
+                // Filled while the picture is off: the one thing to press to get it back.
+                if (off) FilledIconButton(onClick = { actions.screenOff(false) }, enabled = live) { Icon(RemoteIcons.Tv, contentDescription = Copy.SCREEN_ON) }
+                else FilledTonalIconButton(onClick = { actions.screenOff(true) }, enabled = live) { Icon(RemoteIcons.TvOff, contentDescription = Copy.SCREEN_OFF) }
             }
+            FilledTonalIconButton(onClick = onRestart, enabled = live) { Icon(RemoteIcons.RestartAlt, contentDescription = Copy.REMOTE_RESTART) }
         }
     }
 }
 
-@Composable
-private fun ScreenOffStatus() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(Copy.SCREEN_OFF, style = MaterialTheme.typography.titleMedium)
-        Text(
-            " \u00b7 ${Copy.SCREEN_OFF_WAKE}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** The top bar's title while a hidden restart runs, overdue once [late]; a tap brings its dialog back. */
+/** The header's second line while a restart runs, overdue once [late]; a tap brings its dialog back. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun RestartStatus(late: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "Show the restart", onClick = onClick).padding(4.dp),
+        Modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "Show the restart", onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (late) {
-            Icon(RemoteIcons.HourglassTop, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(28.dp))
+            Icon(RemoteIcons.HourglassTop, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
         } else {
-            LoadingIndicator(Modifier.size(28.dp))
+            LoadingIndicator(Modifier.size(18.dp))
         }
-        Text(if (late) Copy.RESTART_LATE_STATUS else Copy.RESTARTING_TITLE)
-        Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (late) Copy.RESTART_LATE_STATUS else Copy.RESTARTING_TITLE, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
     }
 }
 
 /**
- * The bottom band: up to [Dock.MAX] apps in fixed slots from the left, with an Add tile in the next
- * free one. A tap opens the app on the TV; a long press opens its menu, and moving while still
+ * The strip under the keys: up to [Dock.MAX] apps, each centred in an equal share of it so a tap
+ * can't land on the wrong one, with an Add tile in the next free slot. A tap opens the app on the TV; a long press opens its menu, and moving while still
  * holding drags it to another slot.
  */
 @Composable
@@ -595,13 +615,8 @@ private fun DockBand(dock: List<Docked>, apps: List<AppInfo>, tvName: String, en
             onDismiss = { picking = null },
         )
     }
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
-        Box(
-            Modifier
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
-                .alpha(if (enabled) 1f else 0.38f),
-        ) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.extraLarge) {
+        Box(Modifier.padding(horizontal = 4.dp, vertical = 8.dp).alpha(if (enabled) 1f else 0.38f)) {
             DockRow(dock, apps, enabled, actions, onAdd = { picking = "" }, onSwap = { picking = it.packageName })
         }
     }
@@ -613,7 +628,7 @@ private fun DockRow(dock: List<Docked>, apps: List<AppInfo>, enabled: Boolean, a
     // The app being dragged, and how far; the others make room for it as it goes.
     var lifted by remember { mutableStateOf<String?>(null) }
     var dragX by remember { mutableFloatStateOf(0f) }
-    BoxWithConstraints(Modifier.fillMaxWidth().height(80.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp)) {
         val slot = constraints.maxWidth / Dock.MAX.toFloat()
         fun from() = dock.indexOfFirst { it.packageName == lifted }
         fun to() = (from() + (dragX / slot).roundToInt()).coerceIn(0, dock.lastIndex)
@@ -625,7 +640,7 @@ private fun DockRow(dock: List<Docked>, apps: List<AppInfo>, enabled: Boolean, a
             Copy.DOCK_EMPTY,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = maxWidth / Dock.MAX + 8.dp, bottom = 16.dp),
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = maxWidth / Dock.MAX, end = 8.dp),
         )
         dock.forEachIndexed { i, app -> key(app.packageName) {
             val up = app.packageName == lifted
@@ -688,7 +703,7 @@ private fun DockRow(dock: List<Docked>, apps: List<AppInfo>, enabled: Boolean, a
     }
 }
 
-/** One docked app: its icon and name, lifted a size up while held. */
+/** One docked app: its icon, centred in the whole slot it answers to, lifted a size up while held. Its name is for TalkBack and the menu. */
 @Composable
 private fun DockTile(
     app: AppInfo,
@@ -709,9 +724,9 @@ private fun DockTile(
     val hold by rememberUpdatedState(onHold)
     val move by rememberUpdatedState(onDrag)
     val drop by rememberUpdatedState(onDrop)
-    Column(
+    Box(
         Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .semantics {
                 role = Role.Button
@@ -743,37 +758,27 @@ private fun DockTile(
                     }
                     drop()
                 }
-            }
-            .padding(top = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            },
+        contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.shadow(if (lifted) 6.dp else 0.dp, MaterialTheme.shapes.medium)) { AppIcon(app, Modifier.size(48.dp)) }
-        Text(
-            app.label,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
+        Box(Modifier.shadow(if (lifted) 6.dp else 0.dp, MaterialTheme.shapes.medium)) { AppIcon(app, word = true) }
     }
 }
 
-/** The next free slot: a dashed outline the size of an app icon, with Add under it. */
+/** The next free slot: a dashed outline the size of an app icon, centred in the whole slot. */
 @Composable
 private fun AddTile(enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val outline = MaterialTheme.colorScheme.outline
     val shape = MaterialTheme.shapes.medium
-    Column(
+    Box(
         modifier
+            .fillMaxHeight()
             .clickable(enabled = enabled, onClickLabel = Copy.ADD_TO_DOCK, role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = Copy.ADD_TO_DOCK }
-            .padding(top = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .semantics(mergeDescendants = true) { contentDescription = Copy.ADD_TO_DOCK },
+        contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.size(48.dp).drawBehind {
+            Modifier.size(40.dp).drawBehind {
                 val corner = shape.topStart.toPx(size, this)
                 drawRoundRect(
                     outline,
@@ -783,7 +788,6 @@ private fun AddTile(enabled: Boolean, onClick: () -> Unit, modifier: Modifier = 
             },
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-        Text(Copy.DOCK_ADD, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -835,6 +839,11 @@ private object RemoteIcons {
         "M1 3.54L2.53 5.07C1.65 5.28 1 6.06 1 7L1 19C1 20.1 1.9 21 3 21L18.46 21L20.46 23L21.72 21.73L2.27 2.27L1 3.54Z" +
             "M3 19L3 7L4.46 7L16.46 19L3 19Z" +
             "M21 5L13.42 5L16.71 1.7L16 1L12 5L8 1L7.3 1.7L10.58 5L7.52 5L9.52 7L21 7L21 18.48L22.65 20.13C22.87 19.81 23 19.42 23 19L23 7C23 5.89 22.11 5 21 5Z",
+    )
+    val Tv = icon(
+        "Tv",
+        "M21 3L3 3C1.9 3 1 3.9 1 5L1 17C1 18.1 1.9 19 3 19L8 19L8 21L16 21L16 19L21 19C22.1 19 22.99 18.1 22.99 17L23 5C23 3.9 22.1 3 21 3Z" +
+            "M21 17L3 17L3 5L21 5L21 17Z",
     )
     val Backspace = icon(
         "Backspace",
