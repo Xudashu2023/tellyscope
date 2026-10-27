@@ -50,6 +50,7 @@ import app.tellyscope.data.Update
 import app.tellyscope.data.FoldBook
 import app.tellyscope.data.UpdateCheck
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -90,6 +91,8 @@ data class ScanUi(
 data class DeviceUi(
     val snapshot: Snapshot? = null,
     val apps: List<AppInfo> = emptyList(),
+    /** The first read of [apps] after opening the TV is still out; ends on success, empty or error. */
+    val appsLoading: Boolean = false,
     val network: NetworkInfo? = null,
     val history: List<HistoryEntry> = emptyList(),
     /** Package whose action row is open, and the action awaiting confirmation. */
@@ -202,6 +205,7 @@ data class UiState(
     val selectedId: String? = null,
     val device: DeviceUi = DeviceUi(),
     val query: String = "",
+    /** When this state was made; it doesn't tick. Screens read the time with [clock]. */
     val now: Long = System.currentTimeMillis(),
     /** TVs asked to restart, by id. */
     val restarting: Map<String, Restart> = emptyMap(),
@@ -297,6 +301,10 @@ class TellyscopeViewModel(
     private val _state = MutableStateFlow(UiState(now = clock()))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    /** The clock, every second. Apart from [state], so a tick redraws only what shows a time. */
+    private val _now = MutableStateFlow(clock())
+    val now: StateFlow<Long> = _now.asStateFlow()
+
     /** One-shot "done, undo?" messages for the snackbar, with the TV they happened on. */
     private val _done = MutableStateFlow<Done?>(null)
     val done: StateFlow<Done?> = _done.asStateFlow()
@@ -331,6 +339,12 @@ class TellyscopeViewModel(
     /** Watches the TV for a launcher's install from the Play Store. */
     private var launcherJob: Job? = null
     private var updateJob: Job? = null
+    /** The clock and the device refresh, every second. */
+    private var tickJob: Job? = null
+    /** In the background since [pause]; [resume] starts everything again. */
+    private var paused = false
+    /** The scan was running, or asked for, while in the background, so [resume] starts it. */
+    private var scanOnResume = false
     /** The fingerprint the user waved away on the phone; its prompt stays hidden while the TV shows it. */
     private var dismissedRequest: String? = null
 
@@ -342,14 +356,7 @@ class TellyscopeViewModel(
             _state.update { it.copy(devices = known, listSource = lists) }
             if (_state.value.selectedId == null) known.firstOrNull()?.let { select(it.id) }
         }
-        viewModelScope.launch {
-            var tick = 0
-            while (true) {
-                delay(1_000)
-                _state.update { it.copy(now = clock()) }
-                if (++tick % 3 == 0) refreshDevices()
-            }
-        }
+        startTick()
         updates?.let { u ->
             viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(checkUpdates = u.enabled, alphaBuild = u.alpha) } }
         }
@@ -375,7 +382,48 @@ class TellyscopeViewModel(
         }
     }
 
+    private fun startTick() {
+        tickJob = viewModelScope.launch {
+            var tick = 0
+            while (true) {
+                delay(1_000)
+                _now.value = clock()
+                if (++tick % 3 == 0) refreshDevices()
+            }
+        }
+    }
+
+    /**
+     * The app went to the background: nothing reads the TVs or sweeps the LAN until [resume].
+     * What the user started goes on: a copy, an install, an action, the Play Store wait, a removal.
+     */
+    fun pause() {
+        if (paused) return
+        paused = true
+        tickJob?.cancel()
+        scanOnResume = scanJob?.isActive == true
+        scanJob?.cancel()
+        stopWatching()
+        source.pause(true)
+    }
+
+    /** Back in the foreground: the TVs are read again and the page on screen picks up where it was, dialogs and all. */
+    fun resume() {
+        if (!paused) return
+        paused = false
+        source.pause(false)
+        startTick()
+        if (scanOnResume) rescan()
+        viewModelScope.launch {
+            if (!refreshDevices()) _state.value.selected?.let(::watch)
+        }
+    }
+
     fun rescan() {
+        if (paused) {
+            scanOnResume = true
+            return
+        }
         if (scanJob?.isActive == true) return
         scanJob = viewModelScope.launch {
             // Empty scan with no TV open: the guide is on screen; keep looking so the user never has to
@@ -472,12 +520,8 @@ class TellyscopeViewModel(
     fun showStats(profile: StatsProfile) = source.showStats(_state.value.selectedId, profile)
 
     fun select(id: String?) {
-        liveJob?.cancel()
+        stopWatching()
         launcherJob?.cancel()
-        mediumJob?.cancel()
-        listsJob?.cancel()
-        requestJob?.cancel()
-        accessJob?.cancel()
         // A copy still running on this TV keeps its dialog, after a reconnect or a look at another TV.
         val transfer = id?.let(transfers::get)
         // A removal survives the reconnect it causes; the TV coming back reselects it.
@@ -493,29 +537,55 @@ class TellyscopeViewModel(
             val hidden = source.launcherCardHidden(device.id)
             _state.update { if (it.selectedId == device.id) it.copy(device = it.device.copy(history = history, dock = dock, launcherCardHidden = hidden)) else it }
         }
-        if (device.state != DeviceState.Online) return
+        watch(device)
+    }
+
+    /** Stops the reads of the TV on screen that [watch] started. */
+    private fun stopWatching() {
+        liveJob?.cancel()
+        mediumJob?.cancel()
+        listsJob?.cancel()
+        requestJob?.cancel()
+        accessJob?.cancel()
+    }
+
+    /** Reads the TV on screen while it's online: stats, apps, tweaks, files, lists, prompts, access. Not in the background. */
+    private fun watch(device: Device) {
+        if (paused || device.state != DeviceState.Online) return
+        val id = device.id
+        // Only a page with no list yet says it's loading; back from the background, the list stays up.
+        updateDevice(id) { it.copy(appsLoading = it.apps.isEmpty()) }
         liveJob = viewModelScope.launch {
-            source.live(id!!).collect { snap ->
+            source.live(id).collect { snap ->
                 lastSnapshot[id] = snap
                 _state.update { it.copy(device = it.device.copy(snapshot = snap)) }
             }
         }
-        // Its own job: the list download never holds up apps or stats.
-        listsJob = viewModelScope.launch { loadLists(id!!) }
-        requestJob = viewModelScope.launch { watchRequests(id!!) }
-        accessJob = viewModelScope.launch { watchAccess(id!!) }
+        // One read of the app list per open: Apps and the TV's list both use it. The list
+        // download runs in its own job, so it never holds up apps or stats.
+        val apps = CompletableDeferred<List<AppInfo>>()
+        listsJob = viewModelScope.launch { loadLists(id) { apps.await() } }
+        requestJob = viewModelScope.launch { watchRequests(id) }
+        accessJob = viewModelScope.launch { watchAccess(id) }
         mediumJob = viewModelScope.launch {
             // A TV that drops mid-read throws; the live flow ends and the offline card takes over.
             try {
                 // Read first: update {} may run its block again, and must never call the TV.
-                val apps = source.apps(id!!)
-                updateDevice(id) { it.copy(apps = apps) }
-                pruneDock(id, apps)
+                val read = try {
+                    source.apps(id)
+                } catch (e: Exception) {
+                    apps.completeExceptionally(e)
+                    updateDevice(id) { it.copy(appsLoading = false) }
+                    throw e
+                }
+                updateDevice(id) { it.copy(apps = read, appsLoading = false) }
+                apps.complete(read)
+                pruneDock(id, read)
                 val tweaks = source.tweaks(id)
                 updateDevice(id) { it.copy(tweaks = tweaks) }
                 loadFiles()
                 while (true) {
-                    val net = source.network(id!!)
+                    val net = source.network(id)
                     _state.update { it.copy(device = it.device.copy(network = net)) }
                     delay(10_000)
                 }
@@ -527,21 +597,26 @@ class TellyscopeViewModel(
         }
     }
 
-    /** Remembered TVs reconnect on their own; pick up their state and restart stats when one comes back. */
-    private suspend fun refreshDevices() {
+    /**
+     * Remembered TVs reconnect on their own; pick up their state and restart stats when one comes back.
+     * True when that reselected the TV on screen.
+     */
+    private suspend fun refreshDevices(): Boolean {
         val known = source.known()
         val before = _state.value.selected?.state
         _state.update { s -> s.copy(devices = known, restarting = restarts(s.restarting, known)) }
-        val now = _state.value.selected ?: return
-        if (now.state == DeviceState.Online && before != DeviceState.Online) select(now.id)
+        val now = _state.value.selected ?: return false
+        if (now.state != DeviceState.Online || before == DeviceState.Online) return false
+        select(now.id)
+        return true
     }
 
     /** Reconnect button: a TV stopped at "not allowed" asks again; an offline one restarts its stats. */
     fun reconnect(id: String) {
         viewModelScope.launch {
             source.reconnect(id)
-            refreshDevices()
-            select(id)
+            // A TV that came back is selected already; again would read it all twice.
+            if (!refreshDevices() || _state.value.selectedId != id) select(id)
         }
     }
 
@@ -1094,14 +1169,19 @@ class TellyscopeViewModel(
         }
     }
 
-    private suspend fun loadLists(id: String) {
-        val lists = source.suggestions(id)
-        // Once the list is known its keep entries show as protected.
-        val apps = if (lists is Suggestions.Ready) runCatching { source.apps(id) }.getOrNull() else null
+    private suspend fun loadLists(id: String, apps: suspend () -> List<AppInfo>) {
+        val lists = source.suggestions(id, apps)
+        // Once the list is known its keep entries show as protected, without reading the TV again.
+        val keep = (lists as? Suggestions.Ready)?.list?.keep.orEmpty()
         _state.update { s ->
-            if (s.selectedId != id) s else s.copy(device = s.device.copy(lists = lists, apps = apps ?: s.device.apps))
+            if (s.selectedId != id) s
+            else s.copy(device = s.device.copy(lists = lists, apps = s.device.apps.map { it.copy(listKeep = it.packageName in keep) }))
         }
     }
+
+    /** The app list on screen, or a fresh read when there's none yet. */
+    private suspend fun shownApps(id: String): List<AppInfo> =
+        _state.value.takeIf { it.selectedId == id }?.device?.apps?.ifEmpty { null } ?: source.apps(id)
 
     /**
      * Another device's "Allow debugging?" prompt, checked every few seconds while the TV's page
@@ -1287,7 +1367,7 @@ class TellyscopeViewModel(
         listsJob?.cancel()
         listsJob = viewModelScope.launch {
             source.pickList(id, listId)
-            loadLists(id)
+            loadLists(id) { shownApps(id) }
         }
     }
 
@@ -1310,7 +1390,7 @@ class TellyscopeViewModel(
             val now = source.listSource()
             _state.update { it.copy(listSource = now, device = it.device.copy(lists = null)) }
             _notice.value = Copy.listSource(now)
-            if (id != null) loadLists(id)
+            if (id != null) loadLists(id) { shownApps(id) }
         }
     }
 
@@ -1376,7 +1456,7 @@ class TellyscopeViewModel(
             val apps = runCatching { source.apps(id) }.getOrNull()
             val history = source.history(id)
             updateDevice(id) { it.copy(apps = apps ?: it.apps, busy = null, history = history) }
-            loadLists(id)
+            loadLists(id) { apps ?: source.apps(id) }
         }
     }
 

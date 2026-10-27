@@ -10,6 +10,14 @@ Changes merged into `dev` collect under `## Unreleased`. A release renames
 that heading to its version and date. A pull request into `main` fails CI
 until this file has a section for its version.
 
+## 0.10.1 — 2026-10-27
+
+- **Improved:** Apps shows it's loading while the TV's app list is read. [#176](../../pull/176)
+- **Improved:** Opening a TV reads its apps once, in one go, so Apps fills in sooner. [#173](../../pull/173)
+- **Improved:** App icons load once per TV and no longer slow the screen down. [#175](../../pull/175)
+- **Improved:** Tellyscope stops polling your TV while it's in the background. [#172](../../pull/172)
+- **Improved:** The TV's page no longer redraws every app each second. [#174](../../pull/174)
+
 ## 0.10.0 — 2026-10-26
 
 - **New:** Pick a better home screen, install it from the Play Store and switch to it. [#152](../../pull/152)

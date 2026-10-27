@@ -19,6 +19,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +60,7 @@ import app.tellyscope.ui.DeviceTabsScreen
 import app.tellyscope.ui.Done
 import app.tellyscope.ui.LauncherActions
 import app.tellyscope.ui.LauncherScreen
+import app.tellyscope.ui.LocalNow
 import app.tellyscope.ui.LoggedOutScreen
 import app.tellyscope.ui.PermissionScreen
 import app.tellyscope.ui.RemoteActions
@@ -72,6 +74,7 @@ import app.tellyscope.ui.TellyscopeViewModel
 import app.tellyscope.ui.UpdateDialog
 import app.tellyscope.ui.WelcomeScreen
 import app.tellyscope.ui.brands
+import app.tellyscope.ui.clock
 import app.tellyscope.ui.connectTitle
 import app.tellyscope.ui.name
 import app.tellyscope.ui.theme.TellyscopeTheme
@@ -119,7 +122,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                         )
-                        TellyscopeApp(vm)
+                        val now = vm.now.collectAsStateWithLifecycle()
+                        CompositionLocalProvider(LocalNow provides now) { TellyscopeApp(vm) }
                     }
                 }
             }
@@ -203,6 +207,9 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
 
     // On every return to the app, not just a cold start; the check itself enforces the interval.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.checkForUpdate() }
+    // In the background nothing reads the TVs or sweeps the LAN; back on screen, everything picks up again.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.pause() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.resume() }
 
     Snackbars(snackbar, vm.done, vm.notice, vm::doneShown, vm::noticeShown) { vm.undo(it.entry, it.deviceId) }
     LoggedOutSnackbars(snackbar, { state.devices }, { state.selectedId }, onView = vm::select)
@@ -223,7 +230,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
         BackHandler(enabled = adding) { adding = false }
         ScanScreen(
             scan = state.scan,
-            now = state.now,
+            now = state.clock(),
             onRescan = vm::rescan,
             onConnect = vm::connect,
             onCode = vm::codeChanged,
@@ -242,7 +249,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
         ConnectScreen(
             hit = rejoining.hit,
             row = RowState.Waiting(rejoinSince),
-            now = state.now,
+            now = state.clock(),
             brand = brands.first(),
             phoneKey = remember { Connector.fingerprint() },
             onCode = {},
@@ -263,7 +270,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
         LoggedOutScreen(
             device = selected,
             loggedOutAt = loggedOutAt,
-            now = state.now,
+            now = state.clock(),
             onConnect = { rejoinId = selected.id; rejoinSince = System.currentTimeMillis(); vm.reconnect(selected.id) },
             onBack = back,
         )

@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import app.tellyscope.adb.Access
 import app.tellyscope.adb.ActionResult
 import app.tellyscope.adb.ApkInfo
+import app.tellyscope.adb.BatchedShell
 import app.tellyscope.adb.Files
 import app.tellyscope.adb.HomeOptions
 import app.tellyscope.adb.HomeResult
@@ -79,6 +80,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private val links = ConcurrentHashMap<String, DeviceLink>()
     /** The TV on screen and its screen's refresh rates; every other TV reads at [StatsProfile.OTHER]. */
     @Volatile private var statsFor: Pair<String, StatsProfile>? = null
+    /** The app is in the background; see [pause]. */
+    @Volatile private var paused = false
     private val hits = ConcurrentHashMap<String, ScanHit>()
     private val store = DeviceStore(File(appContext.filesDir, "devices.tsv"))
     private val launchers by lazy { parseLaunchers(appContext.assets.open("launchers.json").bufferedReader().use { it.readText() }) }
@@ -137,6 +140,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             pending?.also { pending = null } ?: Connector.connect(h, p)
         })
         link.gate.profile.value = statsFor?.takeIf { it.first == host }?.second ?: StatsProfile.OTHER
+        link.gate.paused.value = paused
         links.put(host, link)?.disconnect()
         watchers.put(host, scope.launch {
             // Save a fresh reading only when what's kept of it changed, not every 2 s.
@@ -353,12 +357,18 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         links.forEach { (host, link) -> link.gate.profile.value = if (host == deviceId) profile else StatsProfile.OTHER }
     }
 
+    override fun pause(paused: Boolean) {
+        this.paused = paused
+        links.values.forEach { it.gate.paused.value = paused }
+    }
+
     /** Runs a change with that TV's stats paused, so a slow stats read can't compete with it or cut it off. */
     private suspend fun <T> busy(deviceId: String, block: suspend () -> T): T =
         links[deviceId]?.gate?.during(block) ?: block()
 
     override suspend fun apps(deviceId: String): List<AppInfo> {
-        val shell = session(deviceId)
+        val session = session(deviceId)
+        val shell = BatchedShell.appList(session)
         val home = Actions(shell).homePackages()
         val homeOptions = Actions(shell).homeOptions()
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
@@ -371,7 +381,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val listed = Parsers.packages(shell.shell("pm list packages --show-versioncode").output)
             .ifEmpty { Parsers.packages(shell.shell("pm list packages").output) }
         // Same key as history: a placeholder serial must not give two boxes one cache.
-        val names = appNames.names(key(deviceId), listed, LabelHelper(shell, helperDex)::describe)
+        val names = appNames.names(key(deviceId), listed, LabelHelper(session, helperDex)::describe)
         val keep = keep[key(deviceId)].orEmpty()
         // On a launcher the user added, offer the way back to the one it replaced.
         val back = homeOptions?.current?.takeIf { it !in system }
@@ -627,14 +637,14 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         }
     }
 
-    override suspend fun suggestions(deviceId: String): Suggestions = try {
+    override suspend fun suggestions(deviceId: String, apps: suspend () -> List<AppInfo>): Suggestions = try {
         val r = resolve(deviceId)
         when {
             r.index == null -> Suggestions.Unavailable
             r.match == ListMatch.None -> Suggestions.NoList(r.index.commit, r.index.devices)
             r.list == null -> Suggestions.Unavailable
             else -> Suggestions.Ready(
-                r.index.commit, r.list, r.sdk, suggest(r.list, apps(deviceId), r.sdk), r.index.devices,
+                r.index.commit, r.list, r.sdk, suggest(r.list, apps(), r.sdk), r.index.devices,
                 byMaker = r.match is ListMatch.Maker,
             )
         }
