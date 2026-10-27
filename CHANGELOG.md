@@ -18,6 +18,7 @@ until this file has a section for its version.
   - Dock apps get equal, well-spaced slots, so a tap can't hit the wrong app.
   - On short phones, mute and volume move beside the D-pad; while typing, the D-pad shrinks to fit.
 - **Fixed:** Turning on an app the TV switched off says why, not a raw error. [#205](../../pull/205)
+- **Fixed:** Make home and Reset TV go straight to the new home screen. [#208](../../pull/208)
 
 ## 0.12.0 — 2026-10-28
 

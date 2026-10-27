@@ -595,6 +595,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 // Off with Home: it would keep sending Home to [added]. Undo, a switch, turns it on again.
                 val service = added.takeIf { it in serviceLaunchers }?.let { Actions(shell).homeService(it) }?.takeIf { Actions(shell).serviceOn(it) }
                 val off = service?.let { Actions(shell).setService(it, false) }
+                // Last: with its service still on, [added] could take Home straight back.
+                val left = Actions(shell).handOff(added, r.to)
                 book.record(
                     deviceId = key,
                     at = System.currentTimeMillis(),
@@ -605,7 +607,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                     // The switch away from it is reversed now, so Restore leaves it alone.
                     undoing = undoing ?: target.reverses,
                     previous = listOfNotNull(r.from?.let { "from" to it }, "to" to r.to, service?.takeIf { off == true }?.let { "service" to it }).toMap(),
-                ).also { if (off == false) throw IllegalStateException(serviceNotOff(labels[added] ?: AppNames.fallback(added))) }
+                ).also {
+                    if (off == false) throw IllegalStateException(serviceNotOff(labels[added] ?: AppNames.fallback(added)))
+                    left?.let { throw IllegalStateException(notShown(labels[target.pkg] ?: AppNames.fallback(target.pkg), it)) }
+                }
             }
             is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
             is HomeResult.Failed -> throw ActionFailed(r.output.ifEmpty { "the TV refused" }, r.details)
@@ -699,7 +704,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             onProgress(ResetProgress(ResetPart.Home, 0, 1))
             try {
                 val (moved, stuck) = resetHome(Actions(shell), h)
-                // Home moved but the service stayed on: Undo still needs the move.
+                // Home moved but the service stayed on, or the hand-off to it didn't finish: Undo still needs the move.
                 if (stuck != null) failed += ResetFailure(ResetPart.Home, ResetApp(h.from, h.fromLabel), stuck)
                 moved
             } catch (e: CancellationException) {
@@ -721,9 +726,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
 
     /**
      * Home back to [home]'s TV's own launcher, the added one's accessibility service off with it:
-     * it would keep sending Home there. Returns what Undo needs, and why the service stayed on if
-     * it did; throws when Home didn't move. On Try again Home may have moved already: then only
-     * the service is left to do, and the entry already holds the move.
+     * it would keep sending Home there; then the TV is handed to it. Returns what Undo needs, and why
+     * the service stayed on or the hand-off didn't finish, if so; throws when Home didn't move. On
+     * Try again Home may have moved already: then only the service and the hand-off are left to do,
+     * and the entry already holds the move.
      */
     private suspend fun resetHome(actions: Actions, home: ResetHome): Pair<Map<String, String?>, String?> {
         val moved: Map<String, String?> = if (actions.currentHome()?.substringBefore('/') == home.to) emptyMap()
@@ -733,10 +739,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
         }
         val service = home.from.takeIf { it in serviceLaunchers }?.let { actions.homeService(it) }?.takeIf { actions.serviceOn(it) }
-            ?: return moved to null
+        val off = service?.let { actions.setService(it, false) }
+        // Last, on Try again too: with its service still on, the added launcher could take Home straight back.
+        val left = actions.currentHome()?.let { actions.handOff(home.from, it) }?.let { notShown(home.toLabel, it) }
         // Recorded only once it's off: Undo turns back on what Reset turned off, nothing more.
-        return if (actions.setService(service, false)) moved + (ResetRecord.SERVICE to service) to null
-        else moved to serviceNotOff(home.fromLabel)
+        val recorded = service?.takeIf { off == true }?.let { moved + (ResetRecord.SERVICE to it) } ?: moved
+        return recorded to if (off == false) serviceNotOff(home.fromLabel) else left
     }
 
     /**
@@ -1113,6 +1121,9 @@ internal suspend fun switchHome(
         val was = r.from?.substringBefore('/')?.takeIf { r.kept }
         val old = was?.takeIf { it in serviceLaunchers }?.let { actions.homeService(it) }?.takeIf { actions.serviceOn(it) }
         val off = old?.let { actions.setService(it, false) }
+        // Last, after both services: one still on could pull Home straight back. A launcher the
+        // TV came with is off now, which closed it already.
+        val left = actions.handOff(was, r.to)
         record(
             // With no launcher to replace, nothing was turned off: Undo is only for a service it turned on.
             r.from?.substringBefore('/') ?: pkg,
@@ -1126,6 +1137,7 @@ internal suspend fun switchHome(
         ).also {
             if (on == false) throw IllegalStateException(serviceNotOn(label(pkg)))
             if (off == false) throw IllegalStateException(serviceNotOff(label(was!!)))
+            left?.let { throw IllegalStateException(notShown(label(pkg), it)) }
         }
     }
     is HomeResult.Refused -> throw IllegalStateException(reason(r.reason))
@@ -1148,6 +1160,9 @@ internal const val RESET = "reset"
 
 private fun serviceNotOn(app: String) =
     "$app is Home now, but its accessibility service didn't turn on, so the TV's Home button may still open its own launcher"
+
+/** Home moved, but the old launcher didn't close or [app] didn't open: [why], from [Actions.handOff]. */
+private fun notShown(app: String, why: String) = "$app is Home now, but $why"
 
 private fun serviceNotOff(app: String) =
     "switched back, but $app's accessibility service is still on. Turn it off in the TV's Settings → Accessibility"

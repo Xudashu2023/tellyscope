@@ -16,7 +16,8 @@ sealed interface ActionResult {
 /**
  * What [Actions.makeHome] did. [from] and [to] are the old and new home activities, for Undo;
  * [from] is null when the TV had no default home and no launcher of its own to replace. [kept]:
- * the old launcher was one the user added, so it stayed on. A [Failed.output] is one plain line;
+ * the old launcher was one the user added, so it stayed on. Once any service change is done, the
+ * caller hands the TV over with [Actions.handOff]. A [Failed.output] is one plain line;
  * [Failed.details] keeps what the TV printed, for a problem report.
  */
 sealed interface HomeResult {
@@ -226,6 +227,24 @@ class Actions(private val shell: AdbShell) {
         val to = launchers()[pkg] ?: return HomeResult.Refused(ProtectedReason.UNKNOWN_HOME)
         if (!setHome(to)) return HomeResult.Failed("the TV still asks which home screen to use")
         return HomeResult.Switched(null, to)
+    }
+
+    /**
+     * After a switch, so the TV shows the new home screen without a Home press: closes [old], the
+     * launcher that was Home if it's still on, then opens [to]. Last, after any accessibility
+     * service change: a service still on can pull Home straight back. Home has moved either way,
+     * so a step that fails is only reported: what went wrong, or null when both took.
+     */
+    suspend fun handOff(old: String?, to: String): String? {
+        require(old == null || PACKAGE.matches(old)) { "not a package name: $old" }
+        require(ACTIVITY.matches(to)) { "not an activity: $to" }
+        val stop = old?.takeIf { it != to.substringBefore('/') }?.let { exec("am force-stop $it", undo = null) }
+        val open = shell.shell("${Commands.OPEN_HOME} '$to' 2>&1")
+        return when {
+            open.exitCode != 0 || "Error" in open.output -> "it didn't open (${open.output.trim()}), so press Home on the remote to go there"
+            stop is ActionResult.Failed -> "the old home screen didn't close (${stop.output})"
+            else -> null
+        }
     }
 
     /** With no default home, the TV's own launcher that is on: the built-in one Home ranks highest. */
