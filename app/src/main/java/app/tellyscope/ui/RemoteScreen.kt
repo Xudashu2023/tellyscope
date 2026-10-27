@@ -368,7 +368,7 @@ private fun KeySurface(
                     interactions.tryEmit(p)
                     if (haptics) haptic.performHapticFeedback(HapticFeedbackType.VirtualKey)
                     var held = true
-                    scope.launch { repeatWhileHeld(key, { held }, press) }
+                    scope.launch { repeatWhileHeld(key, { held }, press = press) }
                     waitForUpOrCancellation()
                     held = false
                     interactions.tryEmit(PressInteraction.Release(p))
