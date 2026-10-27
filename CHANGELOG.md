@@ -19,6 +19,7 @@ until this file has a section for its version.
   - On short phones, mute and volume move beside the D-pad; while typing, the D-pad shrinks to fit.
 - **Fixed:** Turning on an app the TV switched off says why, not a raw error. [#205](../../pull/205)
 - **Fixed:** Make home and Reset TV go straight to the new home screen. [#208](../../pull/208)
+- **Fixed:** After Reset TV, Debloat counts and lists the apps it turned back on. [#209](../../pull/209)
 
 ## 0.12.0 — 2026-10-28
 

@@ -621,6 +621,7 @@ object Copy {
         ResetPart.Home -> "Making ${home ?: "the TV's own launcher"} the home screen."
     } + " Keep the TV on and connected."
     const val RESETTING = "Resetting…"
+    const val RESET_APPS_STALE = "Reset done, but the app list didn't refresh. Open the TV again to see it."
     const val RESET_BUTTON = "Reset TV"
 
     const val RESET_DONE = "TV reset to how it shipped"

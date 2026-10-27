@@ -1627,7 +1627,10 @@ class TellyscopeViewModel(
                     todo.bringBack.map { ResetFailure(ResetPart.BringBack, it, why) } +
                     listOfNotNull(todo.home?.let { ResetFailure(ResetPart.Home, null, why) })
             }
-            val apps = runCatching { source.apps(id) }.getOrNull()
+            // Read again what Reset changed, as opening the TV does: the apps, then the list from them,
+            // so the Debloat tile counts what came back on. A failed read is tried once more, then said.
+            val apps = runCatching { source.apps(id) }.recoverCatching { source.apps(id) }.getOrNull()
+            if (apps == null) _notice.value = Copy.RESET_APPS_STALE
             val history = source.history(id)
             updateDevice(id) { d ->
                 d.copy(
@@ -1635,6 +1638,7 @@ class TellyscopeViewModel(
                     reset = d.reset?.copy(running = null, progress = null, ran = true, failed = failed, entry = entry ?: ui.entry),
                 )
             }
+            if (apps != null) loadLists(id) { apps }
         }
     }
 
