@@ -107,6 +107,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). If you have an Android TV, a [device rep
 
 In Wallace & Gromit's 2002 short [The Tellyscope](https://wallaceandgromit.fandom.com/wiki/The_Tellyscope), Wallace builds a contraption so he can change the channel without leaving his armchair.
 
+## Star History
+
+<a href="https://www.star-history.com/#man15h/tellyscope&Date">
+  <img alt="Star history chart for Tellyscope" src="https://api.star-history.com/svg?repos=man15h/tellyscope&type=Date">
+</a>
+
 ## License
 
 [GNU General Public License v3.0](LICENSE). Third-party credits are in [NOTICE](NOTICE).
