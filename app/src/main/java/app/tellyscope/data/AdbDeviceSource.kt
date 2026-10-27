@@ -377,6 +377,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val homeOptions = Actions(shell).homeOptions()
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
         val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
+        val byTv = Actions(shell).disabledByTv()
         val userInstalled = Parsers.packages(shell.shell("pm list packages -3").output).map { it.name }.toSet()
         // Before Android 7 there's no asking which apps have an icon; the ones the user installed do.
         val launchable = Actions(shell).launchable() ?: userInstalled
@@ -407,6 +408,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 iconAccent = name.tileAccent,
                 system = p.name in system,
                 enabled = p.name !in disabled,
+                disabledByTv = p.name in disabled && p.name in byTv,
                 // Same rule as Actions.run: no known launcher, nothing can be stopped or disabled.
                 // A disabled app stays unprotected so Enable (always allowed) still shows, even
                 // for a built-in launcher that is off.
@@ -532,7 +534,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 ).also { if (back == false) throw IllegalStateException(homeNotBack(it.label)) }
             }
             is ActionResult.Refused -> throw IllegalStateException(reasonText(r.reason))
-            is ActionResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+            is ActionResult.Failed -> throw ActionFailed(failedText(action, labelOf(packageName)), r.output.ifEmpty { "(no output)" })
         }
     }
 
@@ -606,7 +608,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 ).also { if (off == false) throw IllegalStateException(serviceNotOff(labels[added] ?: AppNames.fallback(added))) }
             }
             is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
-            is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+            is HomeResult.Failed -> throw ActionFailed(r.output.ifEmpty { "the TV refused" }, r.details)
         }
     }
 
@@ -1074,6 +1076,17 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         ProtectedReason.UPDATES -> "the TV gets its updates through this"
         ProtectedReason.UNKNOWN_HOME -> "this TV didn't say which app is its home screen, so Tellyscope won't change anything"
         ProtectedReason.CAME_WITH_TV -> "it came with the TV, so it can only be disabled"
+        ProtectedReason.DISABLED_BY_TV -> "the TV turned this off itself, so it can't be turned back on from here"
+    }
+
+    /** One line for a change the TV refused; what it printed goes in [ActionFailed.details]. */
+    private fun failedText(action: Action, label: String) = when (action) {
+        Action.Stop -> "the TV wouldn't stop $label"
+        Action.Disable -> "the TV wouldn't turn $label off"
+        Action.Enable -> "the TV wouldn't turn $label on"
+        Action.Open -> "the TV wouldn't open $label"
+        Action.Uninstall -> "the TV wouldn't uninstall $label"
+        else -> "the TV refused"
     }
 }
 
@@ -1116,7 +1129,7 @@ internal suspend fun switchHome(
         }
     }
     is HomeResult.Refused -> throw IllegalStateException(reason(r.reason))
-    is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+    is HomeResult.Failed -> throw ActionFailed(r.output.ifEmpty { "the TV refused" }, r.details)
 }
 
 /**

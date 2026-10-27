@@ -365,6 +365,7 @@ class ActionsTest {
         sh.answer.let { prev -> sh.answer = { if (it.startsWith("pm enable")) ok("Error: refused\n") else prev(it) } }
         val r = Actions(sh).makeHome("com.spocky.projengmenu") as HomeResult.Failed
         assertTrue(r.output.endsWith("Turn it back on from Apps → Built-in"), r.output)
+        assertEquals("Error: refused", r.details)
     }
 
     @Test fun failedDisablePutsHomeBack() = runTest {
@@ -441,5 +442,46 @@ class ActionsTest {
     @Test fun launchableIsUnknownWithoutCmd() = runTest {
         val sh = FakeShell(mapOf("cmd package" to ShellResult("", 127)))
         assertEquals(null, Actions(sh).launchable())
+    }
+
+    // What `pm enable` prints on Android 14 for a package the TV disabled (enabled=2).
+    private val shellRefused = ShellResult(
+        "Exception occurred while executing 'enable':\n" +
+            "java.lang.SecurityException: Shell cannot change component state for com.android.nfc/null to 1\n" +
+            "\tat com.android.server.pm.PackageManagerService.setEnabledSettings(PackageManagerService.java:3929)\n",
+        255,
+    )
+
+    @Test fun enablingWhatTheTvDisabledIsRefused() = runTest {
+        val sh = FakeShell(mapOf("pm enable" to shellRefused))
+        assertEquals(ActionResult.Refused(ProtectedReason.DISABLED_BY_TV), Actions(sh).run(Action.ENABLE, "com.android.nfc"))
+    }
+
+    @Test fun enablingWhatTheUserDisabledStillWorks() = runTest {
+        val sh = FakeShell(mapOf("pm enable" to ok("Package com.foo.ads new state: enabled\n")))
+        assertEquals(ActionResult.Done(Action.DISABLE), Actions(sh).run(Action.ENABLE, "com.foo.ads"))
+    }
+
+    @Test fun otherEnableFailuresStayFailed() = runTest {
+        val sh = FakeShell(mapOf("pm enable" to ShellResult("Error: Unknown package: com.gone\n", 255)))
+        assertEquals(ActionResult.Failed("Error: Unknown package: com.gone"), Actions(sh).run(Action.ENABLE, "com.gone"))
+    }
+
+    @Test fun disabledByTvIsStateTwoOrFourOnly() = runTest {
+        val dump = """
+            |  Package [com.android.nfc] (3a1b2c):
+            |    User 0: ceDataInode=0 installed=true hidden=false suspended=false distractionFlags=0 stopped=true notLaunched=false enabled=2 instant=false virtual=false
+            |  Package [com.foo.ads] (4d5e6f):
+            |    User 0: ceDataInode=0 installed=true hidden=false suspended=false distractionFlags=0 stopped=true notLaunched=false enabled=3 instant=false virtual=false
+            |  Package [com.oem.lazy] (7a8b9c):
+            |    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=4
+            |  Package [com.google.android.youtube.tv] (1f2e3d):
+            |    User 0: ceDataInode=0 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false
+            |  Package [com.foo.ads] (0a0b0c):
+            |    User 0: installed=true hidden=false stopped=false notLaunched=false enabled=2
+            |""".trimMargin()
+        // The second com.foo.ads is its hidden system package, listed after the installed ones.
+        val sh = FakeShell(mapOf("dumpsys package packages" to ok(dump)))
+        assertEquals(setOf("com.android.nfc", "com.oem.lazy"), Actions(sh).disabledByTv())
     }
 }

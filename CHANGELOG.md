@@ -17,6 +17,7 @@ until this file has a section for its version.
   - Screen off and Restart TV sit beside the handle; the header shows the TV's state.
   - Dock apps get equal, well-spaced slots, so a tap can't hit the wrong app.
   - On short phones, mute and volume move beside the D-pad; while typing, the D-pad shrinks to fit.
+- **Fixed:** Turning on an app the TV switched off says why, not a raw error. [#205](../../pull/205)
 
 ## 0.12.0 — 2026-10-28
 
