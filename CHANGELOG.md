@@ -12,6 +12,8 @@ until this file has a section for its version.
 
 ## Unreleased
 
+- **New:** Debloat shows each app as it turns off, then what worked and what didn't. [#214](../../pull/214)
+
 ## 0.12.0 — 2026-10-28
 
 - **New:** Reset TV, in ⋮: turn your TV back to how it shipped, with one Undo. [#192](../../pull/192)
