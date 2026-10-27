@@ -110,8 +110,7 @@ In Wallace & Gromit's 2002 short [The Tellyscope](https://wallaceandgromit.fando
 ## Star History
 
 <a href="https://www.star-history.com/#man15h/tellyscope&Date">
-  <img alt="Star history chart for Tellyscope" src="https://api.star-history.com/svg?repos=man15h/tellyscope&type=Date#gh-light-mode-only">
-  <img alt="Star history chart for Tellyscope" src="https://api.star-history.com/svg?repos=man15h/tellyscope&type=Date&theme=dark#gh-dark-mode-only">
+  <img alt="Star history chart for Tellyscope" src="https://api.star-history.com/svg?repos=man15h/tellyscope&type=Date">
 </a>
 
 ## License
