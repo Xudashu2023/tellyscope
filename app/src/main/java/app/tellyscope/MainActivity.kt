@@ -55,6 +55,7 @@ import app.tellyscope.ui.AccessScreen
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.ConnectScreen
 import app.tellyscope.ui.Copy
+import app.tellyscope.ui.DebloatRunScreen
 import app.tellyscope.ui.DebloatScreen
 import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceTabsScreen
@@ -338,6 +339,9 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 later = vm::launcherLater,
             ),
         )
+    } else if (debloat && state.device.debloat != null) {
+        // Leaving mid-run only closes the screen; the run goes on, and History has each app.
+        DebloatRunScreen(state.device.debloat!!, back = { vm.closeDebloat(); debloat = false }, retry = vm::retryDebloat)
     } else if (debloat) {
         // Its own back handler closes the list search before leaving.
         DebloatScreen(
@@ -392,7 +396,8 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 saveFile = { f -> vm.saving(f); saveFile.launch(f.name) },
                 cancelTransfer = vm::cancelTransfer,
                 remote = { remote = true },
-                debloat = { debloat = true },
+                // A run that finished while Debloat was closed is done with.
+                debloat = { vm.closeDebloat(); debloat = true },
                 advanced = { advanced = true },
                 history = { history = true },
                 reset = { vm.openReset(); resetting = true },
