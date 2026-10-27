@@ -688,7 +688,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val home = plan.home?.let { h ->
             onProgress(ResetProgress(ResetPart.Home, 0, 1))
             try {
-                resetHome(Actions(shell), h)
+                val (moved, stuck) = resetHome(Actions(shell), h)
+                // Home moved but the service stayed on: Undo still needs the move.
+                if (stuck != null) failed += ResetFailure(ResetPart.Home, ResetApp(h.from, h.fromLabel), stuck)
+                moved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -708,20 +711,23 @@ class AdbDeviceSource(context: Context) : DeviceSource {
 
     /**
      * Home back to [home]'s TV's own launcher, the added one's accessibility service off with it:
-     * it would keep sending Home there. Returns what Undo needs; throws when Home didn't move. A
-     * service that stayed on throws too, but by then Home has moved, so that's recorded first.
+     * it would keep sending Home there. Returns what Undo needs, and why the service stayed on if
+     * it did; throws when Home didn't move. On Try again Home may have moved already: then only
+     * the service is left to do, and the entry already holds the move.
      */
-    private suspend fun resetHome(actions: Actions, home: ResetHome): Map<String, String?> =
-        when (val r = actions.homeBack(home.to)) {
-            is HomeResult.Switched -> {
-                val service = home.from.takeIf { it in serviceLaunchers }?.let { actions.homeService(it) }?.takeIf { actions.serviceOn(it) }
-                val off = service?.let { actions.setService(it, false) }
-                if (off == false) throw IllegalStateException(serviceNotOff(home.fromLabel))
-                listOfNotNull(ResetRecord.FROM to r.from, ResetRecord.TO to r.to, service?.let { ResetRecord.SERVICE to it }).toMap()
-            }
+    private suspend fun resetHome(actions: Actions, home: ResetHome): Pair<Map<String, String?>, String?> {
+        val moved: Map<String, String?> = if (actions.currentHome()?.substringBefore('/') == home.to) emptyMap()
+        else when (val r = actions.homeBack(home.to)) {
+            is HomeResult.Switched -> listOfNotNull(ResetRecord.FROM to r.from, ResetRecord.TO to r.to).toMap()
             is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
             is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
         }
+        val service = home.from.takeIf { it in serviceLaunchers }?.let { actions.homeService(it) }?.takeIf { actions.serviceOn(it) }
+            ?: return moved to null
+        // Recorded only once it's off: Undo turns back on what Reset turned off, nothing more.
+        return if (actions.setService(service, false)) moved + (ResetRecord.SERVICE to service) to null
+        else moved to serviceNotOff(home.fromLabel)
+    }
 
     /**
      * Undo of a reset: Home back to the launcher it replaced, its service on again, then the apps
@@ -762,8 +768,11 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         }
         val on = each(ResetRecord.list(p, ResetRecord.ON), tv::turnOff)
         val back = each(ResetRecord.list(p, ResetRecord.BACK), tv::remove)
-        if (errors.isEmpty()) {
-            return book.record(key, System.currentTimeMillis(), Action.Change, RESET, "Put back what Reset TV changed", undo = null, undoing = id)
+        // Only the service left on: every change is back, so the reset is undone, with a warning.
+        if (errors.isEmpty() || (on.isEmpty() && back.isEmpty() && !homeLeft)) {
+            val undone = book.record(key, System.currentTimeMillis(), Action.Change, RESET, "Put back what Reset TV changed", undo = null, undoing = id)
+            if (errors.isEmpty()) return undone
+            throw IllegalStateException("put back every change, but ${errors.first()}")
         }
         val left = mapOf(ResetRecord.ON to on.joinToString(","), ResetRecord.BACK to back.joinToString(",")) +
             if (homeLeft) emptyMap() else mapOf(ResetRecord.FROM to null, ResetRecord.TO to null, ResetRecord.SERVICE to null)

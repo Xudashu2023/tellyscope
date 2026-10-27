@@ -259,6 +259,7 @@ private fun AppList(apps: List<ResetApp>) {
 private const val SHOWN = 7
 
 /** After a run: a cookie badge, what changed, and per part what worked, with the first failure's reason. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Result(plan: ResetPlan, failed: List<ResetFailure>) {
     val c = MaterialTheme.colorScheme
@@ -295,9 +296,10 @@ private fun Result(plan: ResetPlan, failed: List<ResetFailure>) {
             val line = when (part) {
                 ResetPart.TurnOn -> Copy.turnedOn(on, plan.turnOn.size)
                 ResetPart.BringBack -> Copy.broughtBack(back, plan.bringBack.size)
-                ResetPart.Home -> plan.home!!.let { if (miss.isEmpty()) Copy.isHome(it.toLabel) else Copy.stillHome(it.fromLabel) }
+                // A miss with an app is only the service: Home did move.
+                ResetPart.Home -> plan.home!!.let { if (miss.all { m -> m.app != null }) Copy.isHome(it.toLabel) else Copy.stillHome(it.fromLabel) }
             }
-            val why = miss.firstOrNull()?.let { f -> (f.app?.let { "${it.label}: " } ?: "") + f.reason.replaceFirstChar(Char::uppercase).trimEnd('.') + "." }
+            val why = miss.firstOrNull()?.let { f -> (f.app?.takeIf { f.part != ResetPart.Home }?.let { "${it.label}: " } ?: "") + f.reason.replaceFirstChar(Char::uppercase).trimEnd('.') + "." }
             Surface(color = c.surfaceContainerLow, shape = groupShape(i, rows.size), modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (miss.isEmpty()) Icon(HistoryIcons.TurnedOn, contentDescription = null, tint = c.primary)

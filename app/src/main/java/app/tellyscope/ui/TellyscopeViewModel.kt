@@ -975,6 +975,8 @@ class TellyscopeViewModel(
                 // Anything else (a dropped socket) still must not crash the app.
                 updateDevice(id) { it.copy(busy = null) }
                 undoing?.let(undoInFlight::remove) // a failed Undo can be tried again
+                // A reset's Undo can get partway, so History shows where it ended.
+                if (undoing != null) runCatching { source.history(id) }.getOrNull()?.let { h -> updateDevice(id) { it.copy(history = h) } }
                 _notice.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
                 return@launch
             }
@@ -1570,6 +1572,8 @@ class TellyscopeViewModel(
     /** Opens Reset TV and reads what it would change. */
     fun openReset() {
         val id = _state.value.selectedId ?: return
+        // Back during a run only closed the screen; opening it again shows that run.
+        if (_state.value.device.busy == RESETTING && _state.value.device.reset != null) return
         updateDevice(id) { it.copy(reset = ResetUi()) }
         viewModelScope.launch {
             val ui = try {
@@ -1592,6 +1596,7 @@ class TellyscopeViewModel(
         val todo = if (!retry) plan else ResetPlan(
             turnOn = ui.failed.filter { it.part == ResetPart.TurnOn }.mapNotNull { it.app },
             bringBack = ui.failed.filter { it.part == ResetPart.BringBack }.mapNotNull { it.app },
+            // A Home failure with an app is its service, still on: Try again does just that.
             home = plan.home?.takeIf { ui.failed.any { it.part == ResetPart.Home } },
         )
         updateDevice(id) { it.copy(busy = RESETTING, reset = ui.copy(running = todo, progress = null, failed = emptyList())) }
@@ -1620,7 +1625,7 @@ class TellyscopeViewModel(
 
     fun closeReset() {
         val id = _state.value.selectedId ?: return
-        updateDevice(id) { it.copy(reset = null) }
+        updateDevice(id) { if (it.busy == RESETTING) it else it.copy(reset = null) }
     }
 
     /** History opened: its newest change is seen, so ⋮ loses its dot until the next one. */
