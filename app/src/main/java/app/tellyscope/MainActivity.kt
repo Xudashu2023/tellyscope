@@ -285,25 +285,6 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             onConnect = { rejoinId = selected.id; rejoinSince = System.currentTimeMillis(); vm.reconnect(selected.id) },
             onBack = back,
         )
-    } else if (remote) {
-        BackHandler { remote = false }
-        DisposableEffect(Unit) { onDispose { vm.closeRemote() } }
-        RemoteScreen(
-            state = state,
-            snackbar = snackbar,
-            actions = RemoteActions(
-                press = vm::press,
-                type = vm::type,
-                reboot = vm::reboot,
-                back = { remote = false },
-                retryRestart = vm::retryRestart,
-                stopWaiting = vm::stopWaiting,
-                launch = vm::launch,
-                setDock = vm::setDock,
-                screenOff = vm::setScreenOff,
-                screenOffTipSeen = vm::screenOffTipSeen,
-            ),
-        )
     } else if (advanced) {
         BackHandler { advanced = false }
         DisposableEffect(Unit) {
@@ -428,6 +409,26 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 access = accessActions(vm) { access = false },
             ),
         )
+        // A sheet over the TV's page, so the page stays where it was underneath; Back or a drag closes it.
+        if (remote) {
+            DisposableEffect(Unit) { onDispose { vm.closeRemote() } }
+            RemoteScreen(
+                state = state,
+                snackbar = snackbar,
+                actions = RemoteActions(
+                    press = vm::press,
+                    type = vm::type,
+                    reboot = vm::reboot,
+                    back = { remote = false },
+                    retryRestart = vm::retryRestart,
+                    stopWaiting = vm::stopWaiting,
+                    launch = vm::launch,
+                    setDock = vm::setDock,
+                    screenOff = vm::setScreenOff,
+                    screenOffTipSeen = vm::screenOffTipSeen,
+                ),
+            )
+        }
     }
 }
 

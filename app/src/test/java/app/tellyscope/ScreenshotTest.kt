@@ -1081,9 +1081,9 @@ class ScreenshotTest {
     private fun remoteState(apps: List<Docked> = docked, restart: Restart? = null) =
         deviceState { copy(dock = apps) }.let { s -> restart?.let { s.copy(restarting = mapOf(s.selectedId!! to it)) } ?: s }
 
-    @Test fun remote() = shot("12_remote") { RemoteScreen(remoteState(), RemoteActions()) }
+    @Test fun remote() = shot("12_remote", screen = true) { RemoteScreen(remoteState(), RemoteActions()) }
 
-    @Test fun remote_dark() = shot("12_remote", dark = true) { RemoteScreen(remoteState(), RemoteActions()) }
+    @Test fun remote_dark() = shot("12_remote", dark = true, screen = true) { RemoteScreen(remoteState(), RemoteActions()) }
 
     @Test fun remoteKeysAreIconsWithSpokenNames() {
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(remoteState(), RemoteActions()) } }
@@ -1095,35 +1095,41 @@ class ScreenshotTest {
         compose.onNodeWithText("OK").assertDoesNotExist()
     }
 
-    // Screen off (0.9): the title says how to wake it, so nothing below moves; ⋮ turns it back on.
+    // Screen off (0.9): the header says how to wake it, so nothing below moves; the filled button turns it back on.
     private fun screenOffState() = remoteState().let { it.copy(screenOff = setOf(it.selectedId!!)) }
-    @Test fun remote_screenOff() = shot("13_remote_screen_off") { RemoteScreen(screenOffState(), RemoteActions()) }
-    @Test fun remote_screenOff_dark() = shot("13_remote_screen_off", dark = true) { RemoteScreen(screenOffState(), RemoteActions()) }
+    @Test fun remote_screenOff() = shot("13_remote_screen_off", screen = true) { RemoteScreen(screenOffState(), RemoteActions()) }
+    @Test fun remote_screenOff_dark() = shot("13_remote_screen_off", dark = true, screen = true) { RemoteScreen(screenOffState(), RemoteActions()) }
     @Test fun remote_screenOffTip() = shot("13_remote_screen_off_tip", screen = true) { RemoteScreen(remoteState().copy(screenOffTip = true), RemoteActions()) }
 
     @Test fun screenOffSaysWhatATapDoes() {
         var off by mutableStateOf(false)
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(if (off) screenOffState() else remoteState(), RemoteActions()) } }
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText(Copy.SCREEN_OFF).assertExists()
+        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertExists()
         off = true
-        compose.onNodeWithText(Copy.SCREEN_ON).assertExists()
+        compose.onNodeWithContentDescription(Copy.SCREEN_ON).assertExists()
         compose.onNodeWithText(Copy.SCREEN_OFF_WAKE, substring = true).assertExists()
     }
 
     @Test fun android14HasNoScreenOff() {
         val s = remoteState().let { st -> st.copy(devices = st.devices.map { if (it.id == st.selectedId) it.copy(android = "14") else it }) }
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(s, RemoteActions()) } }
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText(Copy.SCREEN_OFF).assertDoesNotExist()
-        compose.onNodeWithText(Copy.REMOTE_RESTART).assertExists()
+        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertDoesNotExist()
+        compose.onNodeWithContentDescription(Copy.REMOTE_RESTART).assertExists()
     }
 
-    @Test fun remote_menu() = shot("13_remote_menu", screen = true, before = { compose.onNodeWithContentDescription("More options").performClick() }) {
-        RemoteScreen(remoteState(), RemoteActions())
+    /** The Remote never scrolls: on a short phone the D-pad shrinks and the dock stays on screen. */
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    @Test fun remoteFitsAShortPhone() {
+        val four = docked + listOf(Docked("org.jellyfin.androidtv", "Jellyfin"), Docked("com.spotify.tv.android", "Spotify"))
+        compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(remoteState(apps = four), RemoteActions()) } }
+        compose.onAllNodes(hasScrollAction()).assertCountEquals(0)
+        listOf("OK", "Volume up", "Spotify").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
     }
 
-    @Test fun remote_dockEmpty() = shot("12_remote_dock_empty") { RemoteScreen(remoteState(apps = emptyList()), RemoteActions()) }
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    @Test fun remote_short() = shot("12_remote_short", screen = true) { RemoteScreen(remoteState(), RemoteActions()) }
+
+    @Test fun remote_dockEmpty() = shot("12_remote_dock_empty", screen = true) { RemoteScreen(remoteState(apps = emptyList()), RemoteActions()) }
 
     /**
      * The apps' own icons, for the README's Remote shot only. Test resources, so they never reach the
@@ -1135,7 +1141,7 @@ class ScreenshotTest {
         val four = docked + listOf(Docked("org.jellyfin.androidtv", "Jellyfin"), Docked("com.spotify.tv.android", "Spotify"))
         val spotify = AppInfo("com.spotify.tv.android", "Spotify", null, false, true, null, "", launchable = true)
         val state = deviceState { copy(dock = four, apps = (apps + spotify).map { a -> realIcon(a.packageName)?.let { a.copy(icon = it) } ?: a }) }
-        shot("12_remote_dock_full") { RemoteScreen(state, RemoteActions()) }
+        shot("12_remote_dock_full", screen = true) { RemoteScreen(state, RemoteActions()) }
         // A full row has no Add tile.
         compose.onNodeWithContentDescription(Copy.ADD_TO_DOCK).assertDoesNotExist()
     }
@@ -1164,9 +1170,9 @@ class ScreenshotTest {
 
     @Test fun tiles_apps_dark() = shot("13_tiles_apps", dark = true) { DeviceTabsScreen(tilesState(), DeviceActions(), startTab = TvTab.Apps) }
 
-    @Test fun tiles_dock() = shot("13_tiles_dock") { RemoteScreen(tilesState(), RemoteActions()) }
+    @Test fun tiles_dock() = shot("13_tiles_dock", screen = true) { RemoteScreen(tilesState(), RemoteActions()) }
 
-    @Test fun tiles_dock_dark() = shot("13_tiles_dock", dark = true) { RemoteScreen(tilesState(), RemoteActions()) }
+    @Test fun tiles_dock_dark() = shot("13_tiles_dock", dark = true, screen = true) { RemoteScreen(tilesState(), RemoteActions()) }
 
     @Test fun remote_dockPicker() = shot("12_remote_dock_picker", screen = true, before = { compose.onNodeWithContentDescription(Copy.ADD_TO_DOCK).performClick() }) {
         RemoteScreen(remoteState(), RemoteActions())

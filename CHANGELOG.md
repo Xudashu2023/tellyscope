@@ -13,6 +13,10 @@ until this file has a section for its version.
 ## Unreleased
 
 - **Fixed:** Reset TV's buttons sit above the navigation bar, not under it. [#207](../../pull/207)
+- **Improved:** The Remote opens as a sheet over your TV and never scrolls. [#198](../../pull/198)
+  - Screen off and Restart TV sit beside the handle; the header shows the TV's state.
+  - Dock apps get equal, well-spaced slots, so a tap can't hit the wrong app.
+  - On short phones, mute and volume move beside the D-pad; while typing, the D-pad shrinks to fit.
 
 ## 0.12.0 — 2026-10-28
 
