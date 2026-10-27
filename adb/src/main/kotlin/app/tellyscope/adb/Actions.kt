@@ -16,12 +16,12 @@ sealed interface ActionResult {
 /**
  * What [Actions.makeHome] did. [from] and [to] are the old and new home activities, for Undo;
  * [from] is null when the TV had no default home and no launcher of its own to replace. [kept]:
- * the old launcher was one the user added, so it stayed on. [left]: Home moved, but the old
- * launcher didn't close or the new one didn't open; null when both did. A [Failed.output] is one
- * plain line; [Failed.details] keeps what the TV printed, for a problem report.
+ * the old launcher was one the user added, so it stayed on. Once any service change is done, the
+ * caller hands the TV over with [Actions.handOff]. A [Failed.output] is one plain line;
+ * [Failed.details] keeps what the TV printed, for a problem report.
  */
 sealed interface HomeResult {
-    data class Switched(val from: String?, val to: String, val kept: Boolean = false, val left: String? = null) : HomeResult
+    data class Switched(val from: String?, val to: String, val kept: Boolean = false) : HomeResult
     data class Refused(val reason: ProtectedReason) : HomeResult
     data class Failed(val output: String, val details: String = output) : HomeResult
 }
@@ -102,7 +102,7 @@ class Actions(private val shell: AdbShell) {
      * disabled; if it doesn't, the old home is set back and nothing is turned off. The one
      * exception: Android skips the default while a launcher with a higher Home priority is on, as
      * Android TV Home is. Such an old launcher is turned off first, and turned back on and made
-     * Home again if Home still doesn't open [pkg]. Once switched, the TV goes to [pkg] ([handOff]).
+     * Home again if Home still doesn't open [pkg].
      */
     suspend fun makeHome(pkg: String): HomeResult {
         require(PACKAGE.matches(pkg)) { "not a package name: $pkg" }
@@ -117,7 +117,7 @@ class Actions(private val shell: AdbShell) {
         // guard has done its job. Any other reason still stands.
         Protected.reason(old)?.takeIf { it != ProtectedReason.HOME_SCREEN }?.let { return HomeResult.Refused(it) }
         if (old in userPackages()) {
-            if (setHome(to)) return HomeResult.Switched(from, to, kept = true, left = handOff(old, to))
+            if (setHome(to)) return HomeResult.Switched(from, to, kept = true)
             setHome(from)
             return HomeResult.Failed("the TV kept the home screen it has")
         }
@@ -132,8 +132,7 @@ class Actions(private val shell: AdbShell) {
             setHome(from)
             return HomeResult.Failed("the TV wouldn't turn the old home screen off, so nothing changed", off.output)
         }
-        // Turning it off closed it too: only the new one is left to open.
-        if (checked || setHome(to)) return HomeResult.Switched(from, to, left = handOff(null, to))
+        if (checked || setHome(to)) return HomeResult.Switched(from, to)
         val on = exec("pm enable --user 0 $old", undo = null) { "enabled" in it }
         setHome(from)
         if (on is ActionResult.Failed) {
@@ -145,8 +144,7 @@ class Actions(private val shell: AdbShell) {
     /**
      * Makes [pkg] Home again after another launcher took over: turns it on if it's off, then sets
      * [activity], the one the switch away from it saved, or else its own home activity. The
-     * launcher that was Home stays on, so it can be made Home again or uninstalled; it's closed,
-     * and the TV goes to [pkg] ([handOff]).
+     * launcher that was Home stays on, so it can be made Home again or uninstalled.
      */
     suspend fun homeBack(pkg: String, activity: String? = null): HomeResult {
         require(PACKAGE.matches(pkg)) { "not a package name: $pkg" }
@@ -160,7 +158,7 @@ class Actions(private val shell: AdbShell) {
             setHome(from)
             return HomeResult.Failed("the TV kept the home screen it has")
         }
-        return HomeResult.Switched(from, to, left = handOff(from.substringBefore('/'), to))
+        return HomeResult.Switched(from, to)
     }
 
     /** Makes [activity] (`package/class`) the default home, then checks that Home opens it. */
@@ -228,15 +226,18 @@ class Actions(private val shell: AdbShell) {
     private suspend fun firstHome(pkg: String): HomeResult {
         val to = launchers()[pkg] ?: return HomeResult.Refused(ProtectedReason.UNKNOWN_HOME)
         if (!setHome(to)) return HomeResult.Failed("the TV still asks which home screen to use")
-        return HomeResult.Switched(null, to, left = handOff(null, to))
+        return HomeResult.Switched(null, to)
     }
 
     /**
      * After a switch, so the TV shows the new home screen without a Home press: closes [old], the
-     * launcher that was Home if it's still on, then opens [to]. Home has moved either way, so a
-     * step that fails is only reported. Null when both took.
+     * launcher that was Home if it's still on, then opens [to]. Last, after any accessibility
+     * service change: a service still on can pull Home straight back. Home has moved either way,
+     * so a step that fails is only reported: what went wrong, or null when both took.
      */
-    private suspend fun handOff(old: String?, to: String): String? {
+    suspend fun handOff(old: String?, to: String): String? {
+        require(old == null || PACKAGE.matches(old)) { "not a package name: $old" }
+        require(ACTIVITY.matches(to)) { "not an activity: $to" }
         val stop = old?.takeIf { it != to.substringBefore('/') }?.let { exec("am force-stop $it", undo = null) }
         val open = shell.shell("${Commands.OPEN_HOME} '$to' 2>&1")
         return when {
