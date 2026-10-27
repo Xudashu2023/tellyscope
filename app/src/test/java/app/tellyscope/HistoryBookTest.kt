@@ -6,6 +6,7 @@ import app.tellyscope.data.Action
 import app.tellyscope.data.FakeDeviceSource
 import app.tellyscope.data.HistoryBook
 import app.tellyscope.data.HistoryEntry
+import app.tellyscope.data.firstHomeService
 import app.tellyscope.data.historyKey
 import app.tellyscope.data.restoreEach
 import kotlinx.coroutines.test.runTest
@@ -141,6 +142,35 @@ class HistoryBookTest {
         assertNull(book.openDisable("tv", "me.efesser.flauncher"))
     }
 
+    @Test fun aFirstHomesUndoIsForItsServiceAlone() {
+        val book = HistoryBook()
+        val service = "com.spocky.projengmenu/.Service"
+        val first = book.record("tv", 0L, Action.Home, "com.spocky.projengmenu", "Projectivy Launcher", undo = Action.Enable,
+            previous = mapOf("to" to "com.spocky.projengmenu/.Main", "service" to service))
+        val back = book.record("tv", 1L, Action.HomeBack, "me.efesser.flauncher", "Google TV Home", undo = Action.Home)
+        assertEquals(service, first.firstHomeService)
+        // The Undo the consent promised, and still nothing for Restore to turn on.
+        assertEquals(Action.Enable, first.undo)
+        assertEquals(emptyList<String>(), HistoryBook.leftDisabled(book.entries("tv")))
+        // Turning the service off leaves Home where it is, so an older switch back keeps its Undo.
+        book.record("tv", 2L, Action.Change, "com.spocky.projengmenu", "Turned off Projectivy Launcher's accessibility service", undo = null, undoing = first.id)
+        assertEquals(Action.Home, book.entries("tv").first { it.id == back.id }.undo)
+        // A switch that replaced a launcher is no first home, service or not.
+        val switch = book.record("tv", 3L, Action.Home, "com.google.android.tvlauncher", "Projectivy Launcher", undo = Action.Enable,
+            previous = mapOf("from" to "com.google.android.tvlauncher/.Main", "service" to service))
+        assertNull(switch.firstHomeService)
+    }
+
+    @Test fun aFirstHomeWithItsServiceOnLeavesNothingToRestore() {
+        // No default and the TV's own launcher off: Make Home on Projectivy with its service. Undo turns
+        // the service off; Restore must not list Projectivy, the launcher now on Home.
+        val book = HistoryBook()
+        val pkg = "com.spocky.projengmenu"
+        book.record("tv", 0L, Action.Home, pkg, "Projectivy Launcher", undo = Action.Enable, previous = mapOf("to" to "$pkg/.Home", "service" to "$pkg/.Service"))
+        assertEquals(emptyList<String>(), HistoryBook.leftDisabled(book.entries("tv")))
+        assertNull(book.openDisable("tv", pkg))
+    }
+
     @Test fun restoreAllTurnsOnOnlyWhatTellyscopeDisabled() = runTest {
         // The fake TV starts with TV Recommendations already disabled.
         val source = FakeDeviceSource()
@@ -191,6 +221,24 @@ class HistoryBookTest {
         val disable = source.history(id).single { it.action == Action.Disable }
         // Already back on: no Undo left to offer.
         assertTrue(disable.undoneAt != null)
+    }
+
+    @Test fun restoreAfterTwoSwitchesEndsOnTheTvsOwnHome() = runTest {
+        // L→A→B, where L sorts before A: alphabetical order undid L→A first and ended on A.
+        val own = "com.google.android.tvlauncher"
+        val first = "me.efesser.launcher"
+        val book = HistoryBook(tmp.root.resolve("history.tsv"))
+        book.record(tv, 1_000, Action.Home, own, "A", Action.Enable, previous = mapOf("from" to "$own/.Main", "to" to "$first/.Main"))
+        book.record(tv, 2_000, Action.Home, first, "B", Action.Enable, previous = mapOf("from" to "$first/.Main", "to" to "com.spocky.projengmenu/.Main"))
+        // As the source does: turning on a launcher a switch turned off makes it Home again.
+        var home = "com.spocky.projengmenu/.Main"
+        restoreEach(book.restorable(tv)) { pkg ->
+            val switch = book.openDisable(tv, pkg)!!
+            book.entries(tv).single { it.id == switch }.previous?.get("from")?.let { home = it }
+            book.record(tv, 3_000, Action.Enable, pkg, pkg, null, undoing = switch)
+        }
+        assertEquals("$own/.Main", home)
+        assertTrue(book.restorable(tv).isEmpty())
     }
 
     @Test fun aStoppedRestoreSaysHowFarItGot() = runTest {

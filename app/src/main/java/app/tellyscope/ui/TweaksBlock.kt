@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -56,7 +57,6 @@ fun TweaksBlock(ui: DeviceUi, actions: DeviceActions) {
     }
     ButtonRow(Copy.CACHES_TITLE, Copy.CACHES_TEXT, Copy.CACHES_BUTTON, enabled = ui.busy == null, actions.clearCaches)
     ButtonRow(Copy.SCREENSHOT_TITLE, Copy.SCREENSHOT_TEXT, Copy.SCREENSHOT_BUTTON, enabled = ui.busy == null, actions.screenshot)
-    if (hasPlayStore(ui.apps)) ButtonRow(Copy.ANOTHER_HOME, Copy.ANOTHER_HOME_TEXT, Copy.CHOOSE_ONE, enabled = ui.busy == null, actions.installLauncher)
     if (askDns) DnsDialog(onDismiss = { askDns = false }) { host -> askDns = false; actions.setDns(host) }
 }
 
@@ -106,7 +106,7 @@ private fun DnsDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(host.trim()) }, enabled = valid) { Text(Copy.DNS_CONFIRM) } },
+        confirmButton = { Button(onClick = { onConfirm(host.trim()) }, enabled = valid) { Text(Copy.DNS_CONFIRM) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

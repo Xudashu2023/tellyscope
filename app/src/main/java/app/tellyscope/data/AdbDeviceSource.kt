@@ -384,8 +384,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val names = appNames.names(key(deviceId), listed, LabelHelper(session, helperDex)::describe)
         val keep = keep[key(deviceId)].orEmpty()
         // On a launcher the user added, offer the way back to the one it replaced.
+        val own = homeOptions?.let { builtIns(system, disabled, it) }.orEmpty()
         val back = homeOptions?.current?.takeIf { it !in system }
-            ?.let { homeBackTarget(it, book.entries(key(deviceId)), builtIns(system, disabled, homeOptions)) }
+            ?.let { homeBackTarget(it, book.entries(key(deviceId)), own) }
         // Its service off, the TV's own launcher may still answer Home: the row offers Turn on.
         val serviceOff = back != null && homeOptions?.current?.takeIf { it in serviceLaunchers }
             ?.let { Actions(shell).homeService(it) }?.let { !Actions(shell).serviceOn(it) } == true
@@ -418,6 +419,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 homeInstead = homeOptions?.takeIf { p.name in it.others }?.current,
                 homeFirst = homeOptions?.takeIf { it.current == null && p.name in it.others } != null,
                 answersHome = homeOptions?.let { p.name == it.current || p.name in it.others } == true,
+                builtInLauncher = p.name in system && (p.name == homeOptions?.current || p.name in own),
                 homeBack = back?.takeIf { p.name == homeOptions?.current }?.let { names[it.pkg]?.label ?: AppNames.fallback(it.pkg) },
                 homeService = p.name in serviceLaunchers,
                 homeServiceOff = serviceOff && p.name == homeOptions?.current,
@@ -502,15 +504,15 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             return switchHome(deviceId, packageName, undoing, again ?: service)
         }
         if (action == Action.HomeBack) return homeBack(deviceId, packageName, undoing)
+        undoing?.let { id -> book.entries(key).firstOrNull { it.id == id } }?.firstHomeService
+            ?.let { return firstHomeServiceOff(deviceId, packageName, it, undoing) }
         if (action == Action.Uninstall && Actions(shell).homeOptions()?.current == packageName) return uninstallHome(deviceId, packageName)
         val r = Actions(shell).run(AdbAction.valueOf(action.name.uppercase()), packageName)
         return when (r) {
             is ActionResult.Done -> {
                 // Undoing a home switch: the old launcher is on again, now make it Home again too.
                 val switch = undoing?.let { id -> book.entries(key).firstOrNull { it.id == id && it.action == Action.Home } }
-                val back = switch?.previous?.get("from")?.let { Actions(shell).setHome(it) }
-                // The service the switch turned on was only there to hold Home.
-                switch?.previous?.get("service")?.let { Actions(shell).setService(it, false) }
+                val back = switch?.let { undoHomeSwitch(Actions(shell), it) }
                 book.record(
                     deviceId = key,
                     at = System.currentTimeMillis(),
@@ -531,52 +533,54 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private suspend fun switchHome(deviceId: String, packageName: String, undoing: Long?, withService: Boolean): HistoryEntry {
         fireHomes -= deviceId
         val key = key(deviceId)
-        val actions = Actions(session(deviceId))
-        return when (val r = actions.makeHome(packageName)) {
-            is HomeResult.Switched -> {
-                // Where the TV sends Home to its own launcher, the new one holds it with this service.
-                val service = packageName.takeIf { withService && it in serviceLaunchers }?.let { actions.homeService(it) }?.takeUnless { actions.serviceOn(it) }
-                val on = service?.let { actions.setService(it, true) }
-                val label = labels[packageName] ?: AppNames.fallback(packageName)
-                book.record(
-                    deviceId = key,
-                    at = System.currentTimeMillis(),
-                    action = Action.Home,
-                    // With no launcher of the TV's own to replace, nothing was turned off and there's nothing to undo.
-                    packageName = r.from?.substringBefore('/') ?: packageName,
-                    label = label,
-                    undo = Action.Enable.takeIf { r.from != null },
-                    undoing = undoing,
-                    // "service" only when this switch turned it on, so Undo turns off no more than that.
-                    previous = listOfNotNull(r.from?.let { "from" to it }, "to" to r.to, service?.takeIf { on == true }?.let { "service" to it }).toMap(),
-                ).also { if (on == false) throw IllegalStateException(serviceNotOn(label)) }
-            }
-            is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
-            is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+        return switchHome(Actions(session(deviceId)), packageName, withService, serviceLaunchers, ::labelOf, ::reasonText) { pkg, undo, previous ->
+            book.record(key, System.currentTimeMillis(), Action.Home, pkg, labelOf(packageName), undo, undoing, previous)
         }
+    }
+
+    private fun labelOf(pkg: String) = labels[pkg] ?: AppNames.fallback(pkg)
+
+    /** Undo of a first home: [launcher] stays Home, as there's none to go back to; its [service] goes off. */
+    private suspend fun firstHomeServiceOff(deviceId: String, launcher: String, service: String, undoing: Long): HistoryEntry {
+        val label = labelOf(launcher)
+        if (!Actions(session(deviceId)).setService(service, false)) throw IllegalStateException(serviceStillOn(label))
+        return book.record(
+            deviceId = key(deviceId),
+            at = System.currentTimeMillis(),
+            // A sentence of its own, like a setting's: nothing here for Restore or a later Undo.
+            action = Action.Change,
+            packageName = launcher,
+            label = "Turned off $label's accessibility service",
+            undo = null,
+            undoing = undoing,
+        )
     }
 
     /**
      * Uninstall of the launcher on Home: Home goes back to the TV's own first, its accessibility
-     * service off with it, as Switch home back does. Any step that fails stops it before the uninstall.
+     * service off with it, as going back does. Any step that fails stops it before the uninstall.
      */
     private suspend fun uninstallHome(deviceId: String, pkg: String): HistoryEntry =
         uninstallAfterHomeBack({ homeBack(deviceId, pkg, null) }, { actNow(deviceId, Action.Uninstall, pkg, null) }, book::dropUndo)
 
     /**
-     * Makes Home again the launcher that [added], now Home, replaced: the one the last switch saved,
-     * else the TV's own. [added] stays on; the entry's undo makes it Home again.
+     * Leaves the launcher the user added, now Home, for one of the TV's own. [pkg] is either that
+     * added launcher, going back to the one it replaced (the one the last switch saved, else the
+     * TV's own), or the TV's own launcher to go to, from the Home screen card. The added launcher
+     * stays on; the entry's undo makes it Home again.
      */
-    private suspend fun homeBack(deviceId: String, added: String, undoing: Long?): HistoryEntry {
+    private suspend fun homeBack(deviceId: String, pkg: String, undoing: Long?): HistoryEntry {
         fireHomes -= deviceId
         val key = key(deviceId)
         val shell = session(deviceId)
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
         val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
-        val options = Actions(shell).homeOptions()
-        val target = options?.current?.takeIf { it == added && it !in system }
-            ?.let { homeBackTarget(it, book.entries(key), builtIns(system, disabled, options)) }
-            ?: throw IllegalStateException("there's no home screen to switch back to")
+        val nothing = "there's no home screen to switch back to"
+        val options = Actions(shell).homeOptions() ?: throw IllegalStateException(nothing)
+        val added = options.current?.takeIf { it !in system } ?: throw IllegalStateException(nothing)
+        val own = builtIns(system, disabled, options)
+        val target = (if (pkg == added) homeBackTarget(added, book.entries(key), own) else pkg.takeIf { it in own }?.let { builtInTarget(it, book.entries(key)) })
+            ?: throw IllegalStateException(nothing)
         return when (val r = Actions(shell).homeBack(target.pkg, target.activity)) {
             is HomeResult.Switched -> {
                 // Off with Home: it would keep sending Home to [added]. Undo, a switch, turns it on again.
@@ -903,11 +907,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         else -> "closing"
     }
 
-    private fun serviceNotOn(app: String) =
-        "$app is Home now, but its accessibility service didn't turn on, so the TV's Home button may still open its own launcher"
-
-    private fun serviceNotOff(app: String) =
-        "switched back, but $app's accessibility service is still on. Turn it off in the TV's Settings → Accessibility"
+    private fun serviceStillOn(app: String) =
+        "$app's accessibility service is still on. Turn it off in the TV's Settings → Accessibility"
 
     private fun homeNotBack(app: String) =
         "turned $app back on, but the TV kept the other home screen. Press Home on the remote to pick $app"
@@ -926,6 +927,65 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         ProtectedReason.CAME_WITH_TV -> "it came with the TV, so it can only be disabled"
     }
 }
+
+/**
+ * Makes [pkg] Home and hands [record] the entry's package, its Undo and what Undo reverses. Only
+ * a launcher the TV came with is ever turned off ([Actions.makeHome]). With [withService], a
+ * launcher in [serviceLaunchers] gets its accessibility service on to hold Home. A launcher the
+ * user added that was Home stays on, and its service goes off, or it would take Home straight
+ * back. The entry is recorded before a service step that didn't take throws, so Undo still works.
+ */
+internal suspend fun switchHome(
+    actions: Actions,
+    pkg: String,
+    withService: Boolean,
+    serviceLaunchers: Set<String>,
+    label: (String) -> String,
+    reason: (ProtectedReason) -> String,
+    record: (packageName: String, undo: Action?, previous: Map<String, String?>) -> HistoryEntry,
+): HistoryEntry = when (val r = actions.makeHome(pkg)) {
+    is HomeResult.Switched -> {
+        // Where the TV sends Home to its own launcher, the new one holds it with this service.
+        val service = pkg.takeIf { withService && it in serviceLaunchers }?.let { actions.homeService(it) }?.takeUnless { actions.serviceOn(it) }
+        val on = service?.let { actions.setService(it, true) }
+        val was = r.from?.substringBefore('/')?.takeIf { r.kept }
+        val old = was?.takeIf { it in serviceLaunchers }?.let { actions.homeService(it) }?.takeIf { actions.serviceOn(it) }
+        val off = old?.let { actions.setService(it, false) }
+        record(
+            // With no launcher to replace, nothing was turned off: Undo is only for a service it turned on.
+            r.from?.substringBefore('/') ?: pkg,
+            Action.Enable.takeIf { r.from != null || on == true },
+            // "service" only when this switch turned it on, and "fromService" only when it turned the
+            // old one's off, so Undo reverses no more than that. "kept": the old launcher stayed on.
+            listOfNotNull(
+                r.from?.let { "from" to it }, "to" to r.to, service?.takeIf { on == true }?.let { "service" to it },
+                ("kept" to "true").takeIf { r.kept }, old?.takeIf { off == true }?.let { "fromService" to it },
+            ).toMap(),
+        ).also {
+            if (on == false) throw IllegalStateException(serviceNotOn(label(pkg)))
+            if (off == false) throw IllegalStateException(serviceNotOff(label(was!!)))
+        }
+    }
+    is HomeResult.Refused -> throw IllegalStateException(reason(r.reason))
+    is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+}
+
+/**
+ * The rest of [switch]'s Undo once its old launcher is on again: Home back to that launcher, the
+ * service the switch turned on off, and the old one's back on. False when Home didn't go back.
+ */
+internal suspend fun undoHomeSwitch(actions: Actions, switch: HistoryEntry): Boolean {
+    val back = switch.previous?.get("from")?.let { actions.setHome(it) }
+    switch.previous?.get("service")?.let { actions.setService(it, false) }
+    switch.previous?.get("fromService")?.let { actions.setService(it, true) }
+    return back != false
+}
+
+private fun serviceNotOn(app: String) =
+    "$app is Home now, but its accessibility service didn't turn on, so the TV's Home button may still open its own launcher"
+
+private fun serviceNotOff(app: String) =
+    "switched back, but $app's accessibility service is still on. Turn it off in the TV's Settings → Accessibility"
 
 /**
  * Writes [values] and hands [record] the label and the old values for History. Strict Private DNS

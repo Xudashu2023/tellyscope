@@ -7,6 +7,7 @@ package app.tellyscope.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -36,13 +38,13 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -53,6 +55,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
@@ -65,6 +68,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -74,6 +78,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -100,8 +105,10 @@ import app.tellyscope.adb.TvFolder
 import app.tellyscope.data.Action
 import app.tellyscope.data.AppInfo
 import app.tellyscope.data.DeviceState
+import app.tellyscope.data.HistoryBook
 import app.tellyscope.data.Snapshot
 import app.tellyscope.data.Suggestions
+import kotlinx.coroutines.launch
 
 /** The TV page's destinations, one job each, in the bottom bar. */
 enum class TvTab(val label: String) { Overview("Overview"), Apps("Apps"), Files("Files"), Tweaks("Tweaks") }
@@ -142,10 +149,13 @@ fun DeviceTabsScreen(
     actions: DeviceActions,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     startTab: TvTab = TvTab.Overview,
+    /** The tab shown, so a screen opened from here can come back to it. */
+    onTab: (TvTab) -> Unit = {},
 ) {
     val device = state.selected ?: return
     val ui = state.device
     var tab by rememberSaveable { mutableStateOf(startTab) }
+    LaunchedEffect(tab) { onTab(tab) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var appsTab by rememberSaveable { mutableStateOf(AppsTab.Running) }
     val q = state.query.trim().lowercase()
@@ -174,9 +184,19 @@ fun DeviceTabsScreen(
         }
     }
     // The tabs share one list, so each opens at the top with its hero, not where the last one was left.
-    // "See changes" lands on Tweaks scrolled to Recent changes, the list's third item, after the hero.
-    var toChanges by remember { mutableStateOf(false) }
     var shown by rememberSaveable { mutableStateOf(tab) }
+    var gate by rememberSaveable { mutableStateOf(false) }
+    if (gate) {
+        val toApps = { gate = false; tab = TvTab.Apps }
+        DebloatGate(
+            // Only where the picker can install one: the Play Store is on and no launcher was added yet.
+            launcher = offerChoose(ui.apps),
+            onChoose = { gate = false; actions.installLauncher() },
+            onApps = toApps,
+            onNeverAgain = { actions.debloatGateOff(); toApps() },
+            onDismiss = { gate = false },
+        )
+    }
     // Each tab refreshes what it shows at its own rate: Overview and Apps (Running, sorted by RAM) need
     // memory per app only, Files and Tweaks no processes at all.
     DisposableEffect(tab, device.id) {
@@ -192,8 +212,7 @@ fun DeviceTabsScreen(
     LaunchedEffect(tab) {
         if (tab == shown) return@LaunchedEffect
         shown = tab
-        list.scrollToItem(if (tab == TvTab.Tweaks && toChanges) 2 else 0)
-        toChanges = false
+        list.scrollToItem(0)
     }
     // Opening search starts the results from the top; closing it brings the TV back into view.
     var wasSearching by rememberSaveable { mutableStateOf(searching) }
@@ -305,19 +324,24 @@ fun DeviceTabsScreen(
                                     count = debloat.count,
                                     todo = debloat.todo,
                                     disabling = ui.busy == DISABLING,
-                                    // With nothing left on the list, Debloat leads to the apps for one-off changes.
-                                    onDebloat = if (debloat.todo) actions.debloat else ({ tab = TvTab.Apps }),
+                                    // With nothing left on the list, Debloat leads to the apps for one-off changes,
+                                    // through a gate that says so until the user turns it off.
+                                    onDebloat = when {
+                                        debloat.todo -> actions.debloat
+                                        state.debloatGate && ui.lists is Suggestions.Ready -> ({ gate = true })
+                                        else -> ({ tab = TvTab.Apps })
+                                    },
                                 )
                             }
                         }
                         // The list, what's plugged in, and Android.
-                        item { SuggestedCard(ui.lists, debloat, offline, onChanges = { toChanges = true; tab = TvTab.Tweaks }) }
+                        item { SuggestedCard(ui.lists, debloat, offline, onChanges = actions.history) }
                         ui.peripherals?.takeIf { !offline }?.let { p -> item(key = "connectedDevices") { ConnectedDevicesCard(p) } }
                         item { AndroidCard(state, snap, offline, onUpdates = actions.checkUpdates) }
                     }
                     TvTab.Apps -> {
                         fun rows(apps: List<AppInfo>) = items(apps, key = { it.packageName }) { app ->
-                            AppRow(app, procs, ui.pending, ui.busy == app.packageName, actions, homeLabel(ui.apps, app), locked = ui.busy != null)
+                            AppRow(app, procs, ui.pending, ui.busy == app.packageName, actions, locked = ui.busy != null, toHomeScreen = { if (searching) closeSearch(); tab = TvTab.Tweaks })
                         }
                         // Until the first read lands, an empty list means "not yet", not "none".
                         val loading = ui.appsLoading && !offline
@@ -377,11 +401,9 @@ fun DeviceTabsScreen(
                     }
                     TvTab.Tweaks -> {
                         if (offline) item { Muted("Connect to the TV to change its settings.") }
-                        else item { Panel(Copy.TWEAKS) { TweaksBlock(ui, actions) } }
-                        item {
-                            Panel("Recent changes") {
-                                HistoryList(ui.history, state.clock(), actions.undo, restoring = ui.busy == RESTORING, onRestoreAll = actions.restoreAll, busy = ui.busy != null)
-                            }
+                        else {
+                            if (homeLaunchers(ui.apps).isNotEmpty()) item { Panel(Copy.HOME_SCREEN) { HomeScreenBlock(ui, actions) } }
+                            item { Panel(Copy.TWEAKS) { TweaksBlock(ui, actions) } }
                         }
                     }
                 }
@@ -416,9 +438,11 @@ private fun Muted(text: String) {
 }
 
 /**
- * The overflow: the TV on top, so it's clear which TV its items touch, then two blocks, this TV's
- * items and then the app-wide ones.
+ * The overflow, as a bottom sheet: the TV on top, so it's clear which TV its items touch, then this
+ * TV's items, the app-wide ones, and Forget on its own. ⋮ carries a dot: red while others are
+ * connected, else the primary colour for a change since History was last opened.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppMenu(state: UiState, actions: DeviceActions) {
     var open by remember { mutableStateOf(false) }
@@ -436,44 +460,91 @@ private fun AppMenu(state: UiState, actions: DeviceActions) {
     )
     if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
     if (renaming) RenameDialog(device.nickname.orEmpty(), device.model ?: networkName(device), onSave = { renaming = false; actions.rename(device.id, it) }, onDismiss = { renaming = false })
-    Box {
-        val others = state.device.access?.others.orEmpty().size
-        IconButton(onClick = { open = true }) {
-            // The access warning shows on ⋮ too, so it's there from every tab.
-            BadgedBox(badge = { if (others > 0) Badge() }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
-        }
-        DropdownMenu(open, onDismissRequest = { open = false }, shape = MaterialTheme.shapes.large) {
-            Row(Modifier.padding(start = 12.dp, end = 16.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Cookie(device, 40.dp)
-                Spacer(Modifier.width(12.dp))
+    val c = MaterialTheme.colorScheme
+    val others = state.device.access?.others.orEmpty().size
+    val fresh = state.historyNew
+    IconButton(onClick = { open = true }) {
+        // The access warning shows on ⋮ too, so it's there from every tab; it outranks a new change.
+        BadgedBox(badge = { MenuDot(others > 0, fresh) }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
+    }
+    if (!open) return
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    // The sheet slides away before what was picked opens.
+    val pick = { then: () -> Unit -> scope.launch { sheet.hide() }.invokeOnCompletion { open = false; then() } }
+    ModalBottomSheet(onDismissRequest = { open = false }, sheetState = sheet) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+            Row(Modifier.padding(start = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Cookie(device, 48.dp)
+                Spacer(Modifier.width(16.dp))
                 Column {
-                    Text(name(device), style = MaterialTheme.typography.titleSmall)
-                    val made = makerLine(device)
-                    if (made.isNotEmpty()) Text(made, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(name(device), style = MaterialTheme.typography.titleLarge)
+                    val health = state.device.snapshot?.takeIf { device.state == DeviceState.Online }?.let { Copy.health(it, heaviest(it, state.device.apps)).text }
+                    val line = listOf(makerLine(device), health.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
+                    if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
                 }
             }
-            MenuBlock {
-                DropdownMenuItem(text = { Text("Rename this TV") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { open = false; renaming = true })
-                DropdownMenuItem(text = { Text("Forget this TV") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { open = false; forgetting = true })
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(Copy.WHO_HAS_ACCESS)
-                            if (others > 0) Text(Copy.othersConnected(others), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                    leadingIcon = {
-                        BadgedBox(badge = { if (state.device.access?.warning == true) Badge() }) { Icon(AccessIcons.Shield, null) }
-                    },
-                    onClick = { open = false; actions.whoHasAccess() },
-                )
-                DropdownMenuItem(text = { Text("Advanced") }, leadingIcon = { Icon(Icons.Default.List, null) }, onClick = { open = false; actions.advanced() })
-            }
-            Spacer(Modifier.height(4.dp))
-            MenuBlock {
-                DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = { open = false; actions.settings() })
-                DropdownMenuItem(text = { Text("About & licences") }, leadingIcon = { Icon(Icons.Default.Info, null) }, onClick = { open = false; about = true })
-            }
+            val off = HistoryBook.leftDisabled(state.device.history).size
+            SheetGroup(
+                { MenuRow(Icons.Default.Edit, "Rename this TV") { pick { renaming = true } } },
+                { MenuRow(HistoryIcons.History, Copy.HISTORY, Copy.stillOff(off).takeIf { off > 0 }, dot = { if (fresh) MenuDot(false, true) }) { pick(actions.history) } },
+                {
+                    MenuRow(
+                        AccessIcons.Shield, Copy.WHO_HAS_ACCESS,
+                        Copy.othersConnected(others).takeIf { others > 0 }, subColor = c.error,
+                        dot = { if (state.device.access?.warning == true) MenuDot(true, false) },
+                    ) { pick(actions.whoHasAccess) }
+                },
+                { MenuRow(Icons.Default.List, Copy.ADVANCED_MONITOR) { pick(actions.advanced) } },
+            )
+            Text("Tellyscope", style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp))
+            SheetGroup(
+                { MenuRow(Icons.Default.Settings, "Settings") { pick(actions.settings) } },
+                { MenuRow(Icons.Default.Info, "About & licences") { pick { about = true } } },
+            )
+            Spacer(Modifier.height(16.dp))
+            // Apart and in red, so it isn't one slip from an everyday item.
+            SheetGroup({ MenuRow(Icons.Default.Delete, "Forget this TV", tint = c.error) { pick { forgetting = true } } })
+        }
+    }
+}
+
+/** ⋮'s dot: red for [warning], else the primary colour for something [fresh]; nothing otherwise. */
+@Composable
+private fun MenuDot(warning: Boolean, fresh: Boolean) {
+    if (warning) Badge() else if (fresh) Badge(containerColor = MaterialTheme.colorScheme.primary)
+}
+
+/** One group of the sheet: rows 2 dp apart, rounded at the group's ends. */
+@Composable
+private fun SheetGroup(vararg rows: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        rows.forEachIndexed { i, row ->
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = groupShape(i, rows.size)) { row() }
+        }
+    }
+}
+
+@Composable
+private fun MenuRow(
+    icon: ImageVector,
+    text: String,
+    sub: String? = null,
+    subColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    /** Icon and text in this colour, for Forget; else the usual ones. */
+    tint: Color? = null,
+    dot: @Composable () -> Unit = {},
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BadgedBox(badge = { dot() }) { Icon(icon, contentDescription = null, tint = tint ?: MaterialTheme.colorScheme.onSurfaceVariant) }
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(text, style = MaterialTheme.typography.bodyLarge, color = tint ?: MaterialTheme.colorScheme.onSurface)
+            sub?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = subColor) }
         }
     }
 }
@@ -544,6 +615,38 @@ internal data class DebloatState(
     /** Debloat has something to show: apps to turn off, or that this TV has no list. */
     val todo: Boolean,
 )
+
+/**
+ * Debloat with everything on the list already off. [launcher]: a minimal home screen is the next
+ * step, so it leads; otherwise Apps does. Don't show again also goes on to Apps.
+ */
+@Composable
+internal fun DebloatGate(launcher: Boolean, onChoose: () -> Unit, onApps: () -> Unit, onNeverAgain: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Broom, contentDescription = null) },
+        title = { Text(Copy.GATE_TITLE) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(Copy.GATE_DONE)
+                Text(if (launcher) Copy.GATE_LAUNCHER else Copy.GATE_APPS)
+            }
+        },
+        // Three actions stack full width; two sit side by side.
+        confirmButton = {
+            if (launcher) {
+                Column(Modifier.fillMaxWidth()) {
+                    Button(onClick = onChoose, Modifier.fillMaxWidth()) { Text(Copy.CHOOSE_HOME) }
+                    TextButton(onClick = onApps, Modifier.fillMaxWidth()) { Text(Copy.GO_TO_APPS) }
+                    TextButton(onClick = onNeverAgain, Modifier.fillMaxWidth()) { Text(Copy.DONT_SHOW_AGAIN) }
+                }
+            } else {
+                Button(onClick = onApps) { Text(Copy.GO_TO_APPS) }
+            }
+        },
+        dismissButton = if (launcher) null else ({ TextButton(onClick = onNeverAgain) { Text(Copy.DONT_SHOW_AGAIN) } }),
+    )
+}
 
 internal fun debloatState(ui: DeviceUi): DebloatState {
     // History lives on this phone, so it only knows what this phone turned off.

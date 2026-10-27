@@ -48,6 +48,7 @@ import app.tellyscope.data.TvSettings
 import app.tellyscope.data.TvTweaks
 import app.tellyscope.data.Update
 import app.tellyscope.data.FoldBook
+import app.tellyscope.data.SeenBook
 import app.tellyscope.data.UpdateCheck
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -223,11 +224,17 @@ data class UiState(
     val screenOff: Set<String> = emptySet(),
     /** The Remote's Screen off button explains itself, the first time only. */
     val screenOffTip: Boolean = false,
+    /** Debloat with nothing left on the list explains why it opens Apps, until Don't show again. */
+    val debloatGate: Boolean = true,
     /** The Apps tabs whose System section the user folded away. */
     val foldedSystem: Set<AppsTab> = emptySet(),
     /** The report screen; null when it's closed. */
     val report: ReportUi? = null,
+    /** When each TV's History was last opened, by id. */
+    val historySeen: Map<String, Long> = emptyMap(),
 ) {
+    /** The selected TV has a change since its History was last opened: ⋮ shows a dot. */
+    val historyNew: Boolean get() = selectedId?.let { id -> device.history.any { it.at > (historySeen[id] ?: 0L) } } == true
     val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
 }
 
@@ -255,6 +262,9 @@ data class Restart(val since: Long, val down: Boolean = false, val waitFrom: Lon
 
 /** The newest messages a report's log keeps. */
 private const val LOG_LINES = 200
+
+/** The gates book's key once the user said Don't show again on the Debloat gate. */
+private const val DEBLOAT_GATE = "debloat"
 
 /** Most TVs are back within this; after it the Remote asks whether to keep waiting. */
 const val RESTART_WAIT_MS = 60_000L
@@ -294,6 +304,9 @@ class TellyscopeViewModel(
     private val updates: UpdateCheck? = null,
     private val folds: FoldBook? = null,
     private val keyHaptics: KeyHaptics? = null,
+    /** App-wide prompts the user turned off: [DEBLOAT_GATE]. */
+    private val gates: FoldBook? = null,
+    private val historySeen: SeenBook? = null,
     /** This build and phone, for reports. */
     private val appFacts: AppFacts = AppFacts("unknown", "unknown phone"),
 ) : ViewModel() {
@@ -321,6 +334,12 @@ class TellyscopeViewModel(
 
     /** Keys go out one at a time, in the order pressed. */
     private val keys = Mutex()
+    /**
+     * Per TV, the letters the Remote typed that are still in the TV's text box, as far as the phone
+     * knows. Backspace deletes only these: on an empty box Delete acts as Back, and YouTube closes.
+     * Any other key may move the focus out of the box, and so may closing the Remote, so both forget them.
+     */
+    private val typed = mutableMapOf<String, Int>()
 
     private var scanJob: Job? = null
     private var sideloadJob: Job? = null
@@ -362,6 +381,12 @@ class TellyscopeViewModel(
         }
         keyHaptics?.let { k ->
             viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(keyHaptics = k.on, screenOffTip = !k.screenOffTipSeen) } }
+        }
+        gates?.let { g ->
+            viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(debloatGate = DEBLOAT_GATE !in g.folded()) } }
+        }
+        historySeen?.let { h ->
+            viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(historySeen = h.seen()) } }
         }
         folds?.let { f ->
             viewModelScope.launch(Dispatchers.IO) {
@@ -1470,6 +1495,14 @@ class TellyscopeViewModel(
             try {
                 // With the picture off, any key wakes it, the way a TV's own remote does, and does nothing else.
                 if (id in _state.value.screenOff) return@withLock wake(id)
+                if (key == RemoteKey.DEL) {
+                    // Nothing typed from here to delete: the key does nothing, and a hold stops.
+                    val left = typed[id] ?: 0
+                    if (left == 0) return@withLock false
+                    return@withLock source.press(id, key)
+                        .also { if (it) typed[id] = left - 1 else _notice.value = Copy.KEY_REFUSED }
+                }
+                typed.remove(id)
                 source.press(id, key).also { if (!it) _notice.value = Copy.KEY_REFUSED }
             } catch (e: CancellationException) {
                 throw e
@@ -1505,6 +1538,21 @@ class TellyscopeViewModel(
         return ok
     }
 
+    fun debloatGateOff() {
+        _state.update { it.copy(debloatGate = false) }
+        viewModelScope.launch(Dispatchers.IO) { gates?.set(DEBLOAT_GATE, true) }
+    }
+
+    /** History opened: its newest change is seen, so ⋮ loses its dot until the next one. */
+    fun historyOpened() {
+        val s = _state.value
+        val id = s.selectedId ?: return
+        val at = s.device.history.maxOfOrNull { it.at } ?: return
+        if (at <= (s.historySeen[id] ?: 0L)) return
+        _state.update { it.copy(historySeen = it.historySeen + (id to at)) }
+        viewModelScope.launch(Dispatchers.IO) { historySeen?.set(id, at) }
+    }
+
     fun screenOffTipSeen() {
         _state.update { it.copy(screenOffTip = false) }
         viewModelScope.launch(Dispatchers.IO) { keyHaptics?.screenOffTipSeen = true }
@@ -1515,6 +1563,7 @@ class TellyscopeViewModel(
      * it back on, so that happens first.
      */
     fun closeRemote() {
+        typed.clear()
         val off = _state.value.screenOff
         if (off.isEmpty()) return source.closeRemote()
         _state.update { it.copy(screenOff = emptySet()) }
@@ -1541,7 +1590,12 @@ class TellyscopeViewModel(
         viewModelScope.launch {
             keys.withLock {
                 _notice.value = try {
-                    if (source.type(id, text)) null else Copy.TYPE_REFUSED
+                    if (source.type(id, text)) {
+                        typed[id] = (typed[id] ?: 0) + text.length
+                        null
+                    } else {
+                        Copy.TYPE_REFUSED
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {

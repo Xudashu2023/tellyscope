@@ -47,8 +47,10 @@ class HistoryBook(private val file: File? = null) {
         previous: Map<String, String?>? = null,
     ): HistoryEntry {
         val undone = undoing?.let { id -> entries.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
-        // Undoing a switch makes the old launcher Home again: a home change like any switch.
-        val takesHome = action == Action.Home || action == Action.HomeBack || undone?.let { entries[it].action == Action.Home } == true
+        // Undoing a switch makes the old launcher Home again: a home change like any switch. Undoing
+        // a first home only turns its service off; Home stays.
+        val takesHome = action == Action.Home || action == Action.HomeBack ||
+            undone?.let { entries[it].action == Action.Home && entries[it].firstHomeService == null } == true
         undone?.let { entries[it] = entries[it].copy(undoneAt = at) }
         if (takesHome) {
             // An older "Switched home back" would switch to a launcher that has since lost Home: its Undo goes.
@@ -108,14 +110,16 @@ class HistoryBook(private val file: File? = null) {
     companion object {
         /**
          * Packages whose last disable/enable in [history] was a disable (a home switch disables the
-         * old launcher); an uninstall clears it.
+         * old launcher); an uninstall clears it. Newest disable first: undoing a switch makes Home
+         * the launcher it replaced, so after L→A→B, Restore undoes A→B, then L→A, and ends on L.
          */
         fun leftDisabled(history: List<HistoryEntry>): List<String> =
             history.filter { it.disables || it.action == Action.Enable || it.action == Action.Uninstall }
                 .sortedBy { it.id }
                 .associate { it.packageName to it }
                 .filterValues { it.disables }
-                .keys.sorted()
+                .values.sortedByDescending { it.id }
+                .map { it.packageName }
     }
 
     private fun save() {
@@ -174,7 +178,7 @@ class HistoryBook(private val file: File? = null) {
 
 private const val VERSION = "v1"
 
-/** Where "Switch home back" goes: a launcher, its home activity if known, and the switch it reverses. */
+/** Where going back from a launcher the user added goes: a launcher, its home activity if known, and the switch it reverses. */
 data class HomeBackTarget(val pkg: String, val activity: String?, val reverses: Long?)
 
 /**
@@ -189,8 +193,29 @@ fun homeBackTarget(current: String, history: List<HistoryEntry>, builtIns: List<
     return builtIns.firstOrNull { it != current }?.let { HomeBackTarget(it, null, null) }
 }
 
-/** A home switch disables the old launcher, unless there was none to replace: then it offers no undo. */
-private val HistoryEntry.disables get() = action == Action.Disable || (action == Action.Home && undo != null)
+/**
+ * Going back to [pkg], one of the TV's own launchers, from the Home screen card: the newest
+ * switch away from it gives its home activity and is the one reversed, so Restore leaves it alone.
+ */
+fun builtInTarget(pkg: String, history: List<HistoryEntry>): HomeBackTarget {
+    val switch = history
+        .filter { it.action == Action.Home && it.undoneAt == null && it.previous?.get("from")?.substringBefore('/') == pkg }
+        .maxByOrNull { it.id }
+    return HomeBackTarget(pkg, switch?.previous?.get("from"), switch?.id)
+}
+
+/**
+ * A home switch disables the old launcher, unless there was none to replace or the old one was a
+ * launcher the user added, which stays on ("kept"). With none to replace there's no "from"; its
+ * Undo, when it turned a service on, is for that service alone. An entry without [previous]
+ * predates that record and keeps counting.
+ */
+private val HistoryEntry.disables get() =
+    action == Action.Disable || (action == Action.Home && undo != null && previous?.get("kept") == null && previous?.let { it["from"] != null } != false)
+
+/** The service a switch with no launcher to replace turned on: its Undo turns that off, and nothing else. */
+val HistoryEntry.firstHomeService: String?
+    get() = previous?.takeIf { action == Action.Home && it["from"] == null }?.get("service")
 
 /**
  * Turns apps back on one at a time and stops at the first refusal, saying how far it got so the

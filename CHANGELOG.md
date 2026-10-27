@@ -10,6 +10,24 @@ Changes merged into `dev` collect under `## Unreleased`. A release renames
 that heading to its version and date. A pull request into `main` fails CI
 until this file has a section for its version.
 
+## Unreleased
+
+## 0.11.0 — 2026-10-27
+
+- **New:** A Home screen card in Tweaks: pick your TV's home screen in one place. [#186](../../pull/186)
+  - Switch between Projectivy, FLauncher and the TV's own launcher with one tap.
+  - Launchers you installed stay on. Only the TV's built-in one is turned off, and Undo brings it back.
+- **Improved:** The ⋮ menu is now a bottom sheet with bigger rows. [#188](../../pull/188)
+  - History (every change, with Undo and Restore everything) moved here from Tweaks.
+  - A dot on ⋮ tells you when there's a new change in History.
+  - Advanced is renamed Advanced monitor.
+- **Fixed:** Undo in History turns off a new home screen's accessibility service, as promised. [#185](../../pull/185)
+- **Fixed:** Restore everything always ends on your TV's own home screen. [#184](../../pull/184)
+- **Fixed:** The Remote's backspace no longer closes the TV app once the box is empty. [#183](../../pull/183)
+- **Improved:** The Remote's dock moves to the bottom; Screen off and Restart go under ⋮. [#182](../../pull/182)
+- **Improved:** Debloat says when the list is all done, and what to try next. [#181](../../pull/181)
+- **Improved:** Every dialog uses one style, with the main action filled. [#180](../../pull/180)
+
 ## 0.10.1 — 2026-10-27
 
 - **Improved:** Apps shows it's loading while the TV's app list is read. [#176](../../pull/176)

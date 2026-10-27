@@ -52,6 +52,7 @@ import app.tellyscope.data.DeviceState
 import app.tellyscope.data.FakeDeviceSource
 import app.tellyscope.data.HistoryEntry
 import app.tellyscope.data.TvSettings
+import app.tellyscope.data.TvAccess
 import app.tellyscope.data.TvTweaks
 import app.tellyscope.data.ListEntry
 import app.tellyscope.data.PickedApp
@@ -71,12 +72,15 @@ import app.tellyscope.ui.AccessActions
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.AppsTab
 import app.tellyscope.ui.ConnectScreen
+import app.tellyscope.ui.DebloatGate
 import app.tellyscope.ui.DebloatScreen
 import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceTabsScreen
+import app.tellyscope.ui.RESTORING
 import app.tellyscope.ui.TvTab
 import app.tellyscope.data.LastKnown
 import app.tellyscope.ui.Copy
+import app.tellyscope.ui.HistoryScreen
 import app.tellyscope.ui.TweaksBlock
 import app.tellyscope.ui.DeviceUi
 import app.tellyscope.ui.DisableDialog
@@ -121,6 +125,7 @@ import java.nio.file.Files
 import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -377,16 +382,16 @@ class ScreenshotTest {
     @Test fun md3_tweaks_offline_dark() { shot("75_md3_tweaks_offline", dark = true) { DeviceTabsScreen(offlineMd3(), DeviceActions(), startTab = TvTab.Tweaks) } }
     @Config(qualifiers = "w411dp-h640dp-xxhdpi")
     @Test fun md3_tweaks_collapsed_dark() = collapsed("66_md3_tweaks_collapsed", true, "Connected", TvTab.Tweaks)
-    // "See changes" on Overview still lands on Tweaks at Recent changes, the end space notwithstanding.
-    @Test fun seeChangesLandsOnRecentChanges() {
+    // "See changes" on Overview opens History, and Tweaks no longer lists the changes.
+    @Test fun seeChangesOpensHistory() {
+        var opened = 0
         compose.mainClock.autoAdvance = false
-        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(md3State(), DeviceActions()) } }
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(md3State(), DeviceActions(history = { opened++ })) } }
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("See changes"))
         compose.onNodeWithText("See changes").performClick()
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNodeWithText("Recent changes").assertIsDisplayed()
-        compose.onAllNodesWithText("Connected").onFirst().assertExists() // folded into the bar
+        assertEquals(1, opened)
     }
     @Config(qualifiers = "w411dp-h640dp-xxhdpi")
     @Test fun md3_tweaks_collapsed() = collapsed("66_md3_tweaks_collapsed", false, "Connected", TvTab.Tweaks)
@@ -574,20 +579,21 @@ class ScreenshotTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             TellyscopeTheme(dark = false, dynamic = false) {
-                DeviceTabsScreen(tabsState(), DeviceActions(advanced = { calls += "advanced" }, settings = { calls += "settings" }))
+                DeviceTabsScreen(tabsState(), DeviceActions(advanced = { calls += "advanced" }, settings = { calls += "settings" }, history = { calls += "history" }))
             }
         }
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithContentDescription("More options").performClick()
         compose.mainClock.advanceTimeBy(1_000)
-        // Both blocks are there: this TV's items, then the app's. Rename, Forget and About open dialogs.
-        for (i in listOf("Rename this TV", "Forget this TV", "Advanced", "Settings", "About & licences")) compose.onNodeWithText(i).assertHasClickAction()
+        // Every group is there: this TV's items, the app's, then Forget. Rename, Forget and About open dialogs.
+        for (i in listOf("Rename this TV", Copy.HISTORY, Copy.ADVANCED_MONITOR, "Settings", "About & licences", "Forget this TV")) compose.onNodeWithText(i).assertHasClickAction()
         compose.onNodeWithText(item).performClick()
         compose.mainClock.advanceTimeBy(1_000)
         return calls
     }
 
-    @Test fun tabs_menuAdvancedOpensAdvanced() = assertEquals(listOf("advanced"), pickFromMenu("Advanced"))
+    @Test fun tabs_menuAdvancedOpensAdvanced() = assertEquals(listOf("advanced"), pickFromMenu(Copy.ADVANCED_MONITOR))
+    @Test fun tabs_menuHistoryOpensHistory() = assertEquals(listOf("history"), pickFromMenu(Copy.HISTORY))
     @Test fun tabs_menuSettingsOpensSettings() = assertEquals(listOf("settings"), pickFromMenu("Settings"))
 
     private fun settings(opened: MutableList<String> = mutableListOf()) = @Composable {
@@ -606,7 +612,7 @@ class ScreenshotTest {
         compose.onNodeWithText("Advanced").performClick()
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithText("cleanyourtv").assertExists()
-        compose.onNodeWithText(" 30k+").assertExists()
+        compose.onNodeWithText(" 40k+").assertExists()
         compose.onNodeWithText("cleanyourtv").performClick()
         compose.onNodeWithText("How to use your own lists").performClick()
         assertEquals(listOf("https://github.com/Gathin23/cleanyourtv", RELEASES.removeSuffix("/releases") + "/blob/main/CONTRIBUTING.md#using-your-own-lists"), opened)
@@ -628,6 +634,37 @@ class ScreenshotTest {
         }
         shot("45_tabs_app_menu", dark, screen = true, before = open) { DeviceTabsScreen(tabsState(), DeviceActions()) }
     }
+
+    // Someone else connected: red on ⋮ and on Who has access, and History keeps its own dot.
+    private fun appMenuWarning(dark: Boolean) {
+        val other = TvAccess(listOf(app.tellyscope.data.AccessClient("192.0.2.47", 1, app.tellyscope.data.AccessClient.Who.Other)), emptyList())
+        val open = { compose.onNodeWithContentDescription("More options").performClick(); compose.mainClock.advanceTimeBy(1_000); Unit }
+        shot("45_tabs_app_menu_warning", dark, screen = true, before = open) { DeviceTabsScreen(tabsState().let { it.copy(device = it.device.copy(access = other)) }, DeviceActions()) }
+        compose.onNodeWithText(Copy.othersConnected(1)).assertExists()
+    }
+    @Test fun tabs_appMenuWarning() = appMenuWarning(false)
+    @Test fun tabs_appMenuWarning_dark() = appMenuWarning(true)
+
+    // ⋮'s dot is for a change newer than the last look at History, and goes once History has seen it.
+    @Test fun historyDotUntilSeen() {
+        val s = tabsState()
+        assertTrue(s.historyNew)
+        val newest = s.device.history.maxOf { it.at }
+        assertFalse(s.copy(historySeen = mapOf(s.selectedId!! to newest)).historyNew)
+        assertTrue(s.copy(historySeen = mapOf(s.selectedId!! to newest - 1)).historyNew)
+        assertFalse(s.copy(device = s.device.copy(history = emptyList())).historyNew)
+    }
+
+    private fun history(name: String, dark: Boolean, state: () -> UiState) = shot(name, dark) { HistoryScreen(state(), {}, {}, {}) }
+    @Test fun history_list() = history("46_history", false, ::tabsState)
+    @Test fun history_list_dark() = history("46_history", true, ::tabsState)
+    @Test fun history_restoring() = history("47_history_restoring", false) { tabsState().let { it.copy(device = it.device.copy(busy = RESTORING)) } }
+    @Test fun history_restoring_dark() = history("47_history_restoring", true) { tabsState().let { it.copy(device = it.device.copy(busy = RESTORING)) } }
+    @Test fun history_empty() {
+        history("48_history_empty", false) { deviceState() }
+        compose.onNodeWithText("Nothing changed yet").assertExists()
+    }
+    @Test fun history_empty_dark() = history("48_history_empty", true) { deviceState() }
 
     @Test fun device_overview() {
         shot("04_device") { DeviceTabsScreen(deviceState(), DeviceActions()) }
@@ -675,17 +712,14 @@ class ScreenshotTest {
         shot("13_device_storage_full") { DeviceTabsScreen(state, DeviceActions()) }
     }
 
-    // Tall enough that History is composed without scrolling: the lazy list never lays it out otherwise.
-    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
     @Test fun device_history() {
         val history = listOf(
             HistoryEntry(2, xgimi.ip, now - 40_000, Action.Disable, "com.xgimi.ota", "XGIMI Updates", Action.Enable, null),
             HistoryEntry(1, xgimi.ip, now - 5 * 60_000, Action.Stop, "com.netflix.ninja", "Netflix", Action.Open, now - 4 * 60_000),
         )
-        shot("07_device_history") { DeviceTabsScreen(deviceState { copy(history = history) }, DeviceActions(), startTab = TvTab.Tweaks) }
+        shot("07_device_history") { HistoryScreen(deviceState { copy(history = history) }, {}, {}, {}) }
     }
 
-    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
     @Test fun history_undoOfTurnOnAsksFirst() {
         val turnedOn = HistoryEntry(3, xgimi.ip, now - 20_000, Action.Enable, "com.xgimi.assistant", "XGIMI Assistant", Action.Disable, null)
         val undone = mutableListOf<HistoryEntry>()
@@ -695,7 +729,7 @@ class ScreenshotTest {
             Unit
         }
         shot("16_history_undo_disable", screen = true, before = openAndTap) {
-            DeviceTabsScreen(deviceState { copy(history = listOf(turnedOn)) }, DeviceActions(undo = { undone += it }), startTab = TvTab.Tweaks)
+            HistoryScreen(deviceState { copy(history = listOf(turnedOn)) }, onUndo = { undone += it }, onRestoreAll = {}, back = {})
         }
         compose.onNodeWithText("Disable XGIMI Assistant?").assertExists()
         assertEquals(emptyList<HistoryEntry>(), undone)
@@ -968,7 +1002,7 @@ class ScreenshotTest {
         compose.onNodeWithText("OK").assertDoesNotExist()
     }
 
-    // Screen off (0.9): the button fills in and the title says how to wake it, so nothing below moves.
+    // Screen off (0.9): the title says how to wake it, so nothing below moves; ⋮ turns it back on.
     private fun screenOffState() = remoteState().let { it.copy(screenOff = setOf(it.selectedId!!)) }
     @Test fun remote_screenOff() = shot("13_remote_screen_off") { RemoteScreen(screenOffState(), RemoteActions()) }
     @Test fun remote_screenOff_dark() = shot("13_remote_screen_off", dark = true) { RemoteScreen(screenOffState(), RemoteActions()) }
@@ -977,17 +1011,26 @@ class ScreenshotTest {
     @Test fun screenOffSaysWhatATapDoes() {
         var off by mutableStateOf(false)
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(if (off) screenOffState() else remoteState(), RemoteActions()) } }
-        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertExists()
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText(Copy.SCREEN_OFF).assertExists()
         off = true
-        compose.onNodeWithContentDescription(Copy.SCREEN_ON).assertExists()
+        compose.onNodeWithText(Copy.SCREEN_ON).assertExists()
         compose.onNodeWithText(Copy.SCREEN_OFF_WAKE, substring = true).assertExists()
     }
 
     @Test fun android14HasNoScreenOff() {
         val s = remoteState().let { st -> st.copy(devices = st.devices.map { if (it.id == st.selectedId) it.copy(android = "14") else it }) }
         compose.setContent { TellyscopeTheme(dynamic = false) { RemoteScreen(s, RemoteActions()) } }
-        compose.onNodeWithContentDescription(Copy.SCREEN_OFF).assertDoesNotExist()
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText(Copy.SCREEN_OFF).assertDoesNotExist()
+        compose.onNodeWithText(Copy.REMOTE_RESTART).assertExists()
     }
+
+    @Test fun remote_menu() = shot("13_remote_menu", screen = true, before = { compose.onNodeWithContentDescription("More options").performClick() }) {
+        RemoteScreen(remoteState(), RemoteActions())
+    }
+
+    @Test fun remote_dockEmpty() = shot("12_remote_dock_empty") { RemoteScreen(remoteState(apps = emptyList()), RemoteActions()) }
 
     /**
      * The apps' own icons, for the README's Remote shot only. Test resources, so they never reach the
@@ -1000,8 +1043,8 @@ class ScreenshotTest {
         val spotify = AppInfo("com.spotify.tv.android", "Spotify", null, false, true, null, "", launchable = true)
         val state = deviceState { copy(dock = four, apps = (apps + spotify).map { a -> realIcon(a.packageName)?.let { a.copy(icon = it) } ?: a }) }
         shot("12_remote_dock_full") { RemoteScreen(state, RemoteActions()) }
-        // A full row has no Add to dock.
-        compose.onNodeWithText(Copy.ADD_TO_DOCK).assertDoesNotExist()
+        // A full row has no Add tile.
+        compose.onNodeWithContentDescription(Copy.ADD_TO_DOCK).assertDoesNotExist()
     }
 
     /**
@@ -1032,7 +1075,7 @@ class ScreenshotTest {
 
     @Test fun tiles_dock_dark() = shot("13_tiles_dock", dark = true) { RemoteScreen(tilesState(), RemoteActions()) }
 
-    @Test fun remote_dockPicker() = shot("12_remote_dock_picker", screen = true, before = { compose.onNodeWithText(Copy.ADD_TO_DOCK).performClick() }) {
+    @Test fun remote_dockPicker() = shot("12_remote_dock_picker", screen = true, before = { compose.onNodeWithContentDescription(Copy.ADD_TO_DOCK).performClick() }) {
         RemoteScreen(remoteState(), RemoteActions())
     }
 
@@ -1063,6 +1106,10 @@ class ScreenshotTest {
     }
 
     @Test fun reboot() = shot("15_reboot", screen = true) { RebootDialog({}, {}) }
+
+    @Test fun debloatGate() = shot("95_debloat_gate", screen = true) { DebloatGate(launcher = true, {}, {}, {}, {}) }
+
+    @Test fun debloatGateApps() = shot("95_debloat_gate_apps", screen = true) { DebloatGate(launcher = false, {}, {}, {}, {}) }
 
     @Config(qualifiers = "w411dp-h2400dp-xxhdpi")
     @Test fun advanced() = shot("17_advanced") { AdvancedScreen(deviceState(), back = {}) }
@@ -1339,7 +1386,7 @@ class ScreenshotTest {
         compose.onNodeWithText("Disable 4 apps?").assertExists()
     }
 
-    // Phone-sized, like every README shot: Recent changes (item 1 on Tweaks) scrolled to the top.
+    // Phone-sized, like every README shot: the History screen.
     @Test fun readme_history() {
         val history = listOf(
             HistoryEntry(4, xgimi.ip, now - 40_000, Action.Disable, "com.google.android.tvrecommendations", "TV Recommendations", Action.Enable, null),
@@ -1347,7 +1394,7 @@ class ScreenshotTest {
             HistoryEntry(2, xgimi.ip, now - 5 * 60_000, Action.Stop, "com.netflix.ninja", "Netflix", Action.Open, null),
             HistoryEntry(1, xgimi.ip, now - 2 * 3_600_000, Action.Stop, "com.google.android.youtube.tv", "YouTube", Action.Open, now - 3_500_000),
         )
-        shot("22_readme_history", before = { compose.onNode(hasScrollAction()).performScrollToIndex(1); Unit }) { DeviceTabsScreen(deviceState { copy(history = history) }, DeviceActions(), startTab = TvTab.Tweaks) }
+        shot("22_readme_history") { HistoryScreen(deviceState { copy(history = history) }, {}, {}, {}) }
         compose.onNodeWithText("Restore everything (2)").assertExists()
     }
     @Test fun readme_install() {
@@ -1372,55 +1419,75 @@ class ScreenshotTest {
         compose.onNodeWithText("wallpaper-mountains.jpg").assertExists()
     }
 
+    // The Tweaks tab opens on the Home screen card: Google TV's own launcher is Home, nothing added yet.
     @Test fun readme_tweaks() {
         val tweaks = TvTweaks(dnsHost = TvSettings.ADGUARD, animationScale = null)
-        shot("29_readme_tweaks") { DeviceTabsScreen(deviceState { copy(tweaks = tweaks) }, DeviceActions(), startTab = TvTab.Tweaks) }
-        compose.onNodeWithText(Copy.dnsState(TvSettings.ADGUARD)).assertExists()
+        shot("29_readme_tweaks") { DeviceTabsScreen(deviceState { copy(tweaks = tweaks, apps = listOf(stockHome, playStore) + apps) }, DeviceActions(), startTab = TvTab.Tweaks) }
+        compose.onNodeWithText(Copy.GET_LAUNCHER_TEXT).assertExists()
     }
 
-    // The list scrolls to the confirm, as a user would.
+    private val stockHome = AppInfo(
+        "com.google.android.tvlauncher", "Google TV Home", 0xFF1A73E8, true, true, "this is your home screen", "1.0.4",
+        home = true, answersHome = true, builtInLauncher = true,
+    )
+    private val playStore = AppInfo("com.android.vending", "Google Play Store", 0xFF01875F, true, true, null, "40.1")
+    private val flauncher = AppInfo("me.efesser.flauncher", "FLauncher", 0xFF3F6FD8, false, true, null, "0.18", removable = true, answersHome = true)
+
+    /** Projectivy, installed by the user, as a launcher: [home] it's on Home, the stock launcher off; else it offers to replace it. */
+    private fun projectivy(a: AppInfo, home: Boolean) = a.copy(
+        protectedReason = "this is your home screen".takeIf { home }, system = false, removable = true, answersHome = true, homeService = true,
+        home = home, homeInstead = stockHome.packageName.takeUnless { home }, homeBack = stockHome.label.takeIf { home },
+    )
+
+    private fun homeState(home: Boolean, pending: Pair<String, Action>? = null) = deviceState {
+        val stock = if (home) stockHome.copy(enabled = false, home = false, answersHome = false, protectedReason = null) else stockHome
+        val f = flauncher.copy(homeInstead = if (home) "com.spocky.projengmenu" else stock.packageName)
+        copy(apps = listOf(stock, f) + apps.map { if (it.packageName == "com.spocky.projengmenu") projectivy(it, home) else it }, pending = pending)
+    }
+
+    // Make Home on Projectivy: the confirm says the TV's own launcher is the only one turned off.
     @Test fun readme_home() {
-        // Google TV's own launcher is Home; Projectivy, installed by the user, offers to replace it.
-        val stock = AppInfo("com.google.android.tvlauncher", "Google TV Home", 0xFF1A73E8, true, true, "this is your home screen", "1.0.4")
-        val state = deviceState {
-            val projectivy = { a: AppInfo -> a.copy(protectedReason = null, system = false, removable = true, homeInstead = stock.packageName) }
-            copy(apps = listOf(stock) + apps.map { if (it.packageName == "com.spocky.projengmenu") projectivy(it) else it }, pending = "com.spocky.projengmenu" to Action.Home)
-        }
-        shot("30_readme_home", before = { compose.onNode(hasScrollAction()).performScrollToNode(hasText("Yes, switch home screen")); Unit }) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
-        compose.onNodeWithText("Yes, switch home screen").assertExists()
+        shot("30_readme_home", screen = true) { DeviceTabsScreen(homeState(home = false, pending = "com.spocky.projengmenu" to Action.Home), DeviceActions(), startTab = TvTab.Tweaks) }
+        compose.onNodeWithText(Copy.makeHomeTitle("Projectivy Launcher")).assertExists()
     }
 
-    // Projectivy is Home now, made so on the TV itself; its row offers the way back to Google TV Home, which is off.
-    private fun homeBackState(confirming: Boolean = false) = deviceState {
-        val stock = AppInfo("com.google.android.tvlauncher", "Google TV Home", 0xFF1A73E8, true, false, null, "1.0.4")
-        val projectivy = { a: AppInfo -> a.copy(protectedReason = "this is your home screen", system = false, removable = true, homeBack = stock.label) }
-        copy(
-            apps = listOf(stock) + apps.map { if (it.packageName == "com.spocky.projengmenu") projectivy(it) else it },
-            pending = ("com.spocky.projengmenu" to Action.HomeBack).takeIf { confirming },
-        )
+    private fun homeCard(dark: Boolean) {
+        shot("78_tweaks_home_card", dark) { DeviceTabsScreen(homeState(home = true), DeviceActions(), startTab = TvTab.Tweaks) }
+        compose.onNodeWithText(Copy.builtIn(off = true)).assertExists()
     }
+    @Test fun tweaks_homeCard() = homeCard(false)
+    @Test fun tweaks_homeCard_dark() = homeCard(true)
+
+    // No default: Android would ask which home screen to use, so the card says to pick one.
+    @Test fun tweaks_homeCardNoDefault() {
+        val state = homeState(home = false).let { s -> s.copy(device = s.device.copy(apps = s.device.apps.map { if (it.packageName == stockHome.packageName) it.copy(home = false) else it })) }
+        shot("78_tweaks_home_card_no_default") { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Tweaks) }
+        compose.onNodeWithText(Copy.NO_DEFAULT).assertExists()
+    }
+
+    // Back to Google TV Home from Projectivy: turned back on, and Projectivy's service goes off with Home.
     private fun homeBack(dark: Boolean) {
-        val back = { compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.confirm(Action.HomeBack))); Unit }
-        shot("78_apps_home_back", dark, before = back) { DeviceTabsScreen(homeBackState(confirming = true), DeviceActions(), startTab = TvTab.Apps) }
-        compose.onNodeWithText(Copy.explainHomeBack("Projectivy Launcher", "Google TV Home", service = false)).assertExists()
+        shot("78_tweaks_home_back", dark, screen = true) {
+            DeviceTabsScreen(homeState(home = true, pending = stockHome.packageName to Action.HomeBack), DeviceActions(), startTab = TvTab.Tweaks)
+        }
+        compose.onNodeWithText(Copy.explainLeave("Google TV Home", off = true, "Projectivy Launcher", currentService = true, service = false)).assertExists()
     }
-    @Test fun apps_homeBack() = homeBack(false)
-    @Test fun apps_homeBack_dark() = homeBack(true)
+    @Test fun tweaks_homeBack() = homeBack(false)
+    @Test fun tweaks_homeBack_dark() = homeBack(true)
 
-    @Test fun apps_homeBackIsOfferedOnTheAddedLauncher() {
-        val proposed = mutableListOf<Pair<String, Action>>()
+    // On Apps, a launcher's row links to the card rather than switching itself.
+    @Test fun apps_launcherRowLinksToTheCard() {
         compose.mainClock.autoAdvance = false
-        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(homeBackState(), DeviceActions(propose = { pkg, a -> proposed += pkg to a }), startTab = TvTab.Apps) } }
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(homeState(home = true), DeviceActions(), startTab = TvTab.Apps) } }
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Projectivy Launcher"))
         compose.onNodeWithText("Projectivy Launcher").performClick()
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.homeBack("Google TV Home")))
-        compose.onNodeWithText(Copy.homeBack("Google TV Home")).performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(Copy.HOME_SETTINGS))
+        compose.onNodeWithText(Copy.HOME_SETTINGS).performClick()
         compose.mainClock.advanceTimeBy(1_000)
-        assertEquals(listOf("com.spocky.projengmenu" to Action.HomeBack), proposed)
-        // Still the home screen, so nothing that would turn it off.
-        compose.onAllNodesWithText("Disable").assertCountEquals(0)
+        // The Tweaks tab, on the card.
+        compose.onNodeWithText(Copy.opensOnHome("Projectivy Launcher")).assertExists()
     }
 
     // A keep from the TV's list only warns; a hard lock still offers nothing.
