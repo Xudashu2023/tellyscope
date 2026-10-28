@@ -30,15 +30,15 @@ fun UpdateDialog(update: Update, onGet: () -> Unit, onLater: () -> Unit, onSkip:
         title = { Text("🎉 Tellyscope ${update.version} is out") },
         text = {
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                Text(boldSpans(dialogNotes(update.notes).ifEmpty { "No release notes." }), style = MaterialTheme.typography.bodyMedium)
+                Text(boldSpans(dialogNotes(update.notes).ifEmpty { "没有更新说明。" }), style = MaterialTheme.typography.bodyMedium)
             }
         },
         // Three actions stack full width.
         confirmButton = {
             Column(Modifier.fillMaxWidth()) {
-                Button(onClick = onGet, Modifier.fillMaxWidth()) { Text("Get it") }
-                TextButton(onClick = onSkip, Modifier.fillMaxWidth()) { Text("Skip this version") }
-                TextButton(onClick = onLater, Modifier.fillMaxWidth()) { Text("Later") }
+                Button(onClick = onGet, Modifier.fillMaxWidth()) { Text("获取") }
+                TextButton(onClick = onSkip, Modifier.fillMaxWidth()) { Text("跳过这个版本") }
+                TextButton(onClick = onLater, Modifier.fillMaxWidth()) { Text("以后再说") }
             }
         },
     )

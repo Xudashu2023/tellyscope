@@ -67,7 +67,7 @@ object DeviceIcons {
 
 /** Screen-reader name for the icon. */
 fun DeviceKind.word() = when (this) {
-    DeviceKind.Tv -> "TV"
+    DeviceKind.Tv -> "电视"
     DeviceKind.Projector -> "Projector"
     DeviceKind.FireTv -> "Fire TV"
     DeviceKind.Stick -> "Streaming device"

@@ -162,9 +162,9 @@ fun DebloatScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(if (searching) "Which TV is this?" else "Debloat") },
+                title = { Text(if (searching) "Which TV is this?" else "精简") },
                 navigationIcon = {
-                    IconButton(onClick = goBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = goBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
                 },
             )
         },
@@ -247,7 +247,7 @@ fun DebloatScreen(
                     val entry = showing?.let { r -> devices.firstOrNull { it.id == r.list.id } ?: devices.firstOrNull { squash(makers.getValue(it.id)) == squash(r.list.name) } }
                     val kind = entry?.let { listKind(it, makers.getValue(it.id)) } ?: tv?.let(::deviceKind) ?: DeviceKind.Tv
                     when {
-                        showing == null -> MatchCard(kind, tv?.let(::name) ?: "This TV", "No list for this TV or its maker yet", Match.None) { marked = null; searching = true }
+                        showing == null -> MatchCard(kind, tv?.let(::name) ?: "这台电视", "No list for this TV or its maker yet", Match.None) { marked = null; searching = true }
                         showing.byMaker -> MatchCard(kind, showing.list.name, "No list for this model, so these come from ${showing.list.name}'s other models", Match.Loose) { marked = null; searching = true }
                         showing.sdkMatches -> MatchCard(kind, showing.list.name, "This model's list · tested on ${showing.list.testedOs ?: showing.sdk?.let(::androidName)}", Match.Exact) { marked = null; searching = true }
                         else -> MatchCard(
@@ -320,7 +320,7 @@ private fun HelpAddCard(onHelpAdd: () -> Unit) {
                     "Send its model and stock apps to cleanyourtv, where Tellyscope\u2019s lists come from. You see the text first.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                FilledTonalButton(onClick = onHelpAdd, modifier = Modifier.align(Alignment.End).padding(top = 8.dp)) { Text("Help add this TV") }
+                FilledTonalButton(onClick = onHelpAdd, modifier = Modifier.align(Alignment.End).padding(top = 8.dp)) { Text("帮助添加这台电视") }
             }
         }
     }
@@ -371,7 +371,7 @@ internal fun DisableDialog(apps: List<Suggested>, onDisable: () -> Unit, onDismi
             }
         },
         confirmButton = { Button(onClick = onDisable, enabled = enabled) { Text("Yes, disable them") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -413,7 +413,7 @@ fun AboutDialog(commit: String?, onDismiss: () -> Unit, version: String = instal
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
     )
 }
 

@@ -47,17 +47,17 @@ fun DebloatRunScreen(run: DebloatRun, back: () -> Unit, retry: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Debloat") },
-                navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text("精简") },
+                navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") } },
             )
         },
         bottomBar = {
             Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 when {
                     !run.ran -> Button(onClick = {}, enabled = false) { Text(Copy.DISABLING) }
-                    run.failed.isEmpty() -> Button(onClick = back) { Text("Done") }
+                    run.failed.isEmpty() -> Button(onClick = back) { Text("已完成") }
                     else -> {
-                        TextButton(onClick = back) { Text("Done") }
+                        TextButton(onClick = back) { Text("已完成") }
                         val one = run.failed.keys.singleOrNull()?.let { pkg -> run.apps.first { it.packageName == pkg }.label }
                         Button(onClick = retry) { Text(Copy.tryAgain(one)) }
                     }
@@ -106,7 +106,7 @@ private fun Progress(run: DebloatRun) {
                     }
                     Spacer(Modifier.width(16.dp))
                     when (mark) {
-                        Mark.Done -> Icon(HistoryIcons.TurnedOn, contentDescription = "Done", tint = c.primary)
+                        Mark.Done -> Icon(HistoryIcons.TurnedOn, contentDescription = "已完成", tint = c.primary)
                         Mark.Running -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Mark.Waiting -> Icon(ResetIcons.Waiting, contentDescription = "Waiting", tint = c.onSurfaceVariant)
                         Mark.Failed -> Icon(Icons.Default.Warning, contentDescription = "Didn't turn off", tint = c.error)

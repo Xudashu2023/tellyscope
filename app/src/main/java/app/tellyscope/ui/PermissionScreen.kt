@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
  * Shown before the first scan on Android 17+, where talking to anything on the
  * Wi-Fi needs the "Nearby devices" permission. After a refusal the screen says
  * why it matters and offers Settings, which works whether or not Android will
- * still show its own dialog; [canAsk] adds "Ask again" while it will.
+ * still show its own dialog; [canAsk] adds "再次询问" while it will.
  */
 @Composable
 fun PermissionScreen(denied: Boolean, canAsk: Boolean, onAllow: () -> Unit, onSettings: () -> Unit) {
@@ -43,7 +43,7 @@ fun PermissionScreen(denied: Boolean, canAsk: Boolean, onAllow: () -> Unit, onSe
             ) {
                 Icon(Icons.Default.Search, contentDescription = null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
             }
-            Text("Find TVs on your Wi-Fi", style = MaterialTheme.typography.headlineMedium)
+            Text("在 Wi-Fi 上找电视", style = MaterialTheme.typography.headlineMedium)
             Text(
                 "Android asks before an app talks to other devices on your Wi-Fi. " +
                     "Tellyscope only connects to the TVs you pick.",
@@ -56,11 +56,11 @@ fun PermissionScreen(denied: Boolean, canAsk: Boolean, onAllow: () -> Unit, onSe
                     color = MaterialTheme.colorScheme.error,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onSettings) { Text("Open Settings") }
-                    if (canAsk) TextButton(onClick = onAllow) { Text("Ask again") }
+                    Button(onClick = onSettings) { Text("打开设置") }
+                    if (canAsk) TextButton(onClick = onAllow) { Text("再次询问") }
                 }
             } else {
-                Button(onClick = onAllow) { Text("Continue") }
+                Button(onClick = onAllow) { Text("继续") }
             }
         }
     }

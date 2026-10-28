@@ -78,7 +78,7 @@ fun ConnectScreen(
         topBar = {
             TopAppBar(
                 title = {},
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") } },
             )
         },
         bottomBar = {
@@ -89,25 +89,25 @@ fun ConnectScreen(
             ) {
                 when (row) {
                     RowState.NotAllowed -> {
-                        TextButton(onClick = onBack) { Text("Back to TVs") }
-                        Button(onClick = onRetry) { Text("Try again") }
+                        TextButton(onClick = onBack) { Text("回到电视列表") }
+                        Button(onClick = onRetry) { Text("再试一次") }
                     }
                     is RowState.Code -> {
-                        TextButton(onClick = onBack) { Text("Cancel") }
+                        TextButton(onClick = onBack) { Text("取消") }
                         val missing = CODE_LENGTH - row.input.length
                         // The button says what's missing instead of sitting there disabled with no reason.
                         Button(onClick = onPair, enabled = !row.busy && missing == 0) {
                             Text(
                                 when {
-                                    row.busy -> "Pairing…"
-                                    missing == 0 -> "Pair"
-                                    missing == 1 -> "1 more digit"
-                                    else -> "$missing more digits"
+                                    row.busy -> "正在配对…"
+                                    missing == 0 -> "配对"
+                                    missing == 1 -> "还差 1 位"
+                                    else -> "还差 $missing 位"
                                 },
                             )
                         }
                     }
-                    else -> TextButton(onClick = onBack) { Text("Cancel") }
+                    else -> TextButton(onClick = onBack) { Text("取消") }
                 }
             }
         },
@@ -119,16 +119,16 @@ fun ConnectScreen(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(DeviceIcons.Tv, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    title ?: listOfNotNull(hit.hostname ?: "Android device", hit.maker).distinct().joinToString(" · "),
+                    title ?: listOfNotNull(hit.hostname ?: "Android 设备", hit.maker).distinct().joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             when (row) {
                 is RowState.Code -> {
-                    Text("Type the pairing code", style = MaterialTheme.typography.headlineMedium)
+                    Text("输入配对码", style = MaterialTheme.typography.headlineMedium)
                     Text(
-                        "On the TV, open the pairing screen and type the 6 digits it shows.",
+                        "在电视上打开配对页面，输入它显示的 6 位数字。",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -145,34 +145,34 @@ fun ConnectScreen(
                             Icon(Icons.Default.Warning, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
                         }
                     }
-                    Text("No answer from the TV", style = MaterialTheme.typography.headlineMedium)
+                    Text("电视没有回应", style = MaterialTheme.typography.headlineMedium)
                     Text(
-                        "The TV didn't accept the connection.",
+                        "电视没有接受连接。",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
-                            "Is the TV on and awake?",
-                            "Was the box on the TV closed, or Deny pressed? Try again and it asks once more.",
-                            "Some TVs switch debugging off after a restart. Turn it back on.",
+                            "电视开机并唤醒了吗？",
+                            "电视上的弹窗被关掉了，还是点了拒绝？再试一次，它会重新询问。",
+                            "有些电视重启后会关闭调试。请重新打开。",
                         ).forEach { Text("•  $it", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
                 // Wireless debugging TVs that already know this phone connect without asking.
                 is RowState.Waiting -> if (hit.kind == ScanKind.Wireless) Connecting() else {
-                    Text("Allow on your TV", style = MaterialTheme.typography.headlineMedium)
+                    Text("在电视上允许", style = MaterialTheme.typography.headlineMedium)
                     Text(
                         marked(
-                            if (phoneKey != null) "A box pops up on your TV. Check its key matches this phone's, tick **Always allow**, then select **Allow**."
-                            else "A box pops up on your TV. Tick **Always allow**, then select **Allow**.",
+                            if (phoneKey != null) "电视上会弹出一个框。请核对密钥与这部手机一致，勾选“始终允许”，然后选择“允许”。"
+                            else "电视上会弹出一个框。请勾选“始终允许”，然后选择“允许”。",
                         ),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     phoneKey?.let { key ->
                         InfoBox {
-                            Text("This phone's key", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("这部手机的密钥", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             // Two lines of eight pairs, so it reads like the TV's and compares at a glance.
                             Text(
                                 key.split(':').chunked(8).joinToString("\n") { it.joinToString(":") },
@@ -200,11 +200,11 @@ fun ConnectScreen(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Connecting() {
-    Text("Connecting", style = MaterialTheme.typography.headlineMedium)
+    Text("正在连接", style = MaterialTheme.typography.headlineMedium)
     Row(verticalAlignment = Alignment.CenterVertically) {
         LoadingIndicator(Modifier.size(48.dp))
         Spacer(Modifier.width(12.dp))
-        Text("Reaching the TV…", style = MaterialTheme.typography.bodyLarge)
+        Text("正在联系电视…", style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -233,9 +233,9 @@ private fun TvPrompt(key: String?) {
                 Modifier.fillMaxWidth(0.84f).background(Color(0xFF1C2222), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Allow USB debugging?", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                Text("允许 USB 调试吗？", color = Color.White, style = MaterialTheme.typography.titleSmall)
                 if (key != null) {
-                    Text("The computer's RSA key fingerprint is:", color = Color(0xFFBEC8C8), fontSize = 9.sp, lineHeight = 12.sp)
+                    Text("这台电脑的 RSA 密钥指纹是：", color = Color(0xFFBEC8C8), fontSize = 9.sp, lineHeight = 12.sp)
                     Text(
                         key.split(':').chunked(8).joinToString(":\n") { it.joinToString(":") },
                         color = Color.White,
@@ -249,13 +249,13 @@ private fun TvPrompt(key: String?) {
                     Box(Modifier.size(16.dp).background(accent, RoundedCornerShape(3.dp)), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Check, null, Modifier.size(14.dp), tint = Color(0xFF003738))
                     }
-                    Text("Always allow from this computer", color = Color(0xFFE3E9E9), fontSize = 11.sp)
+                    Text("始终允许这台电脑", color = Color(0xFFE3E9E9), fontSize = 11.sp)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    Text("Cancel", color = accent, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                    Text("取消", color = accent, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
                     // Focused, the way the remote shows it.
                     Text(
-                        "Allow",
+                        "允许",
                         color = Color(0xFF003738),
                         fontSize = 12.sp,
                         modifier = Modifier.background(accent, CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),

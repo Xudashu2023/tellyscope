@@ -161,8 +161,8 @@ internal fun SystemWidget(usedGb: Double?, totalGb: Double?, live: Snapshot?, as
             val total = totalGb?.takeIf { it > 0 }
             if (used != null && total != null) {
                 Row {
-                    Text("Internal storage", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${Copy.gbOf(used, total)} used", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("内部存储", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${Copy.gbOf(used, total)} 已用", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Copy.free(used, total)?.let { Text(it, style = MaterialTheme.typography.titleLarge) }
                 val full = used / total
@@ -174,9 +174,9 @@ internal fun SystemWidget(usedGb: Double?, totalGb: Double?, live: Snapshot?, as
             }
             Row {
                 Vital("CPU", live?.let { "${it.cpuPercent}%" } ?: dash, Modifier.weight(1f))
-                Vital("RAM", live?.takeIf { it.ramTotalMb > 0 }?.let { "${it.ramUsedMb * 100 / it.ramTotalMb}%" } ?: dash, Modifier.weight(1f))
-                Vital("Temp", live?.tempC?.let { "$it\u00b0C" } ?: dash, Modifier.weight(1f))
-                Vital("Network", live?.netBytesPerSec?.let(Copy::speed) ?: dash, Modifier.weight(1.3f))
+                Vital("内存", live?.takeIf { it.ramTotalMb > 0 }?.let { "${it.ramUsedMb * 100 / it.ramTotalMb}%" } ?: dash, Modifier.weight(1f))
+                Vital("温度", live?.tempC?.let { "$it\u00b0C" } ?: dash, Modifier.weight(1f))
+                Vital("网络", live?.netBytesPerSec?.let(Copy::speed) ?: dash, Modifier.weight(1.3f))
             }
         }
     }
@@ -195,10 +195,10 @@ private fun Vital(label: String, value: String, modifier: Modifier = Modifier) {
 fun UndoDisableDialog(entry: HistoryEntry, onDisable: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Disable ${entry.label}?") },
+        title = { Text("禁用 ${entry.label} 吗？") },
         text = { Text(Copy.explain(Action.Disable, entry.label, entry.packageName)) },
         confirmButton = { Button(onClick = onDisable) { Text(Copy.confirm(Action.Disable)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -214,8 +214,8 @@ fun RestoreDialog(count: Int, onRestore: () -> Unit, onDismiss: () -> Unit) {
                     "Apps that were already off before Tellyscope's first change stay off.",
             )
         },
-        confirmButton = { Button(onClick = onRestore) { Text("Turn back on") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { Button(onClick = onRestore) { Text("重新开启") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -236,10 +236,10 @@ fun RenameDialog(current: String, fallback: String, onSave: (String) -> Unit, on
     var text by rememberSaveable { mutableStateOf(current) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename this TV") },
+        title = { Text("给这台电视改名") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Only this phone sees the name. Nothing on the TV changes.")
+                Text("只有这部手机能看到这个名字。电视上不会有任何变化。")
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it.take(app.tellyscope.data.NameBook.MAX_LENGTH) },
@@ -248,8 +248,8 @@ fun RenameDialog(current: String, fallback: String, onSave: (String) -> Unit, on
                 )
             }
         },
-        confirmButton = { Button(onClick = { onSave(text) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { Button(onClick = { onSave(text) }) { Text("保存") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -258,10 +258,10 @@ fun RenameDialog(current: String, fallback: String, onSave: (String) -> Unit, on
 fun ForgetDialog(name: String, onForget: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Forget $name?") },
-        text = { Text("Tellyscope stops reconnecting to it and removes it from this phone. Nothing on the TV changes. You can add it again from a scan.") },
-        confirmButton = { Button(onClick = onForget) { Text("Forget") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        title = { Text("忘记 $name 吗？") },
+        text = { Text("Tellyscope 不再自动重新连接它，并从这部手机上移除。电视上不会有任何变化。你可以从扫描里重新添加。") },
+        confirmButton = { Button(onClick = onForget) { Text("忘记") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -286,14 +286,14 @@ internal fun NotAllowedCard(onConnect: () -> Unit) {
         ),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            CardTitle(Icons.Default.Warning, "The TV didn't allow this phone")
+            CardTitle(Icons.Default.Warning, "电视没有允许这部手机")
             Text(
-                "Its debugging access was turned off, reset, or denied. Tellyscope stopped asking so the TV isn't flooded with prompts.",
+                "它的调试访问被关闭、重置或拒绝了。Tellyscope 已停止请求，以免电视被弹窗淹没。",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = onConnect) { Text("Connect again") }
+            Button(onClick = onConnect) { Text("重新连接") }
             Text(
-                "Then press Allow on the TV, and tick \"Always allow from this computer\".",
+                "然后在电视上按“允许”，并勾选“始终允许这台电脑”。",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -320,14 +320,14 @@ internal fun OfflineCard(device: Device, now: Long, onReconnect: () -> Unit) {
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                CardTitle(Icons.Default.Info, "Offline")
+                CardTitle(Icons.Default.Info, "离线")
                 Text(
-                    "Last seen ${device.lastSeen?.let { Copy.ago(it, now) } ?: "a while ago"}. It reconnects on its own when the TV is back on.",
+                    "Last seen ${device.lastSeen?.let { Copy.ago(it, now) } ?: "很久以前"}. It reconnects on its own when the TV is back on.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             Spacer(Modifier.width(12.dp))
-            FilledTonalButton(onClick = onReconnect) { Text("Reconnect") }
+            FilledTonalButton(onClick = onReconnect) { Text("重新连接") }
         }
     }
 }
@@ -344,7 +344,7 @@ internal fun heaviest(snap: Snapshot, apps: List<AppInfo>): List<String> {
 @Composable
 internal fun EmptyLine(q: String) {
     Text(
-        if (q.isEmpty()) "Nothing here yet." else "Nothing matches \"$q\".",
+        if (q.isEmpty()) "这里还没有内容。" else "Nothing matches \"$q\".",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -392,7 +392,7 @@ fun UninstallDialog(app: AppInfo, onUninstall: () -> Unit, onDismiss: () -> Unit
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
             ) { Text(Copy.confirm(Action.Uninstall)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -415,9 +415,9 @@ internal fun AppRow(
     val changeable = app.protectedReason == null || launcher
     val ram = procs.filter { it.packageName == app.packageName }.sumOf { it.ramMb }
     val status = when {
-        !app.enabled -> "Disabled"
-        ram > 0 -> "Running"
-        else -> "Not running"
+        !app.enabled -> "已禁用"
+        ram > 0 -> "运行中"
+        else -> "未运行"
     }
     Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(enabled = changeable) { open = !open }.padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -467,7 +467,7 @@ internal fun AppRow(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = actions.confirm, enabled = !locked) { Text(Copy.confirm(proposed)) }
-                        TextButton(onClick = actions.cancel) { Text("Cancel") }
+                        TextButton(onClick = actions.cancel) { Text("取消") }
                     }
                 }
             }

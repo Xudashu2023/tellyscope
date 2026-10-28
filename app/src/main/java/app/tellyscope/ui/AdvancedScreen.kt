@@ -94,12 +94,12 @@ fun AdvancedScreen(
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Text("This TV", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
+                        Text("这台电视", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
                         listOfNotNull(
-                            "IP address" to device.hit.ip,
+                            "IP 地址" to device.hit.ip,
                             "Port" to device.hit.port.toString(),
-                            (device.manufacturer ?: device.hit.maker)?.let { "Maker" to it },
-                            device.hit.hostname?.let { "Network name" to it },
+                            (device.manufacturer ?: device.hit.maker)?.let { "厂商" to it },
+                            device.hit.hostname?.let { "网络名称" to it },
                         ).forEach { (k, v) -> KeyValue(k, v) }
                     }
                 }
@@ -110,7 +110,7 @@ fun AdvancedScreen(
             } else {
                 item {
                     Text(
-                        if (offline) Copy.noStats(device.state) else "Loading stats…",
+                        if (offline) Copy.noStats(device.state) else "正在加载状态…",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -118,11 +118,11 @@ fun AdvancedScreen(
             }
             // A TV that lists no processes gets no charts: no bars beats an empty card.
             if (byApp.isNotEmpty()) {
-                item { UsageCard("CPU by app", byApp.map { (n, ps) -> n to ps.sumOf { it.cpuPercent } }, fmt = { "%.0f%%".format(it) }) }
-                item { UsageCard("RAM by app", byApp.map { (n, ps) -> n to ps.sumOf { it.ramMb }.toDouble() }, fmt = { Copy.mb(it.toInt()) }) }
-                item { Block("Processes") { ProcessTable(snap?.procs.orEmpty(), ui.apps) } }
+                item { UsageCard("各应用 CPU 占用", byApp.map { (n, ps) -> n to ps.sumOf { it.cpuPercent } }, fmt = { "%.0f%%".format(it) }) }
+                item { UsageCard("各应用内存占用", byApp.map { (n, ps) -> n to ps.sumOf { it.ramMb }.toDouble() }, fmt = { Copy.mb(it.toInt()) }) }
+                item { Block("进程") { ProcessTable(snap?.procs.orEmpty(), ui.apps) } }
             }
-            ui.network?.let { n -> item { Block("Network") { NetworkBlock(n) } } }
+            ui.network?.let { n -> item { Block("网络") { NetworkBlock(n) } } }
         }
     }
 }
@@ -145,9 +145,9 @@ private fun Block(title: String, body: @Composable () -> Unit) {
 private fun Stats(s: Snapshot, staleSince: Long?) {
     val cells = listOf(
         "CPU" to "${s.cpuPercent}%",
-        "Temperature" to s.tempC?.let { "$it°C" },
-        "On for" to Copy.uptime(s.uptimeSeconds),
-        "Screen" to s.screenOn?.let { if (it) "On" else "Off" },
+        "温度" to s.tempC?.let { "$it°C" },
+        "已开机" to Copy.uptime(s.uptimeSeconds),
+        "屏幕" to s.screenOn?.let { if (it) "开" else "关" },
     )
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -159,8 +159,8 @@ private fun Stats(s: Snapshot, staleSince: Long?) {
                 )
             }
             Column(Modifier.alpha(if (staleSince != null) 0.5f else 1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Meter("Memory", s.ramUsedMb / 1024.0, s.ramTotalMb / 1024.0)
-                s.storageUsedGb?.let { u -> s.storageTotalGb?.let { t -> Meter("Storage", u, t) } }
+                Meter("内存", s.ramUsedMb / 1024.0, s.ramTotalMb / 1024.0)
+                s.storageUsedGb?.let { u -> s.storageTotalGb?.let { t -> Meter("存储", u, t) } }
                 Row(Modifier.fillMaxWidth()) {
                     cells.forEach { (label, value) ->
                         Column(Modifier.weight(1f)) {
@@ -235,7 +235,7 @@ private fun ProcessTable(procs: List<Proc>, apps: List<AppInfo>) {
     Row {
         Text("App", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("CPU", Modifier.width(56.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
-        Text("RAM", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text("内存", Modifier.width(72.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
     }
     groups.forEach { (name, ps) ->
         var open by rememberSaveable(name) { mutableStateOf(false) }
@@ -263,17 +263,17 @@ private fun ProcessTable(procs: List<Proc>, apps: List<AppInfo>) {
 private fun NetworkBlock(n: NetworkInfo) {
     // Already the technical screen: every fact shows, nothing behind a Details tap.
     listOfNotNull(
-        "Connection" to listOfNotNull(if (n.iface == "wifi" || n.iface.startsWith("wlan")) "Wi-Fi" else "Ethernet", n.ssid).joinToString(" · "),
-        n.rssi?.let { "Signal" to "${signalWord(it).replaceFirstChar(Char::uppercase)} ($it dBm)" },
-        "IP address" to n.ip,
+        "连接" to listOfNotNull(if (n.iface == "wifi" || n.iface.startsWith("wlan")) "Wi-Fi" else "Ethernet", n.ssid).joinToString(" · "),
+        n.rssi?.let { "信号" to "${signalWord(it).replaceFirstChar(Char::uppercase)} ($it dBm)" },
+        "IP 地址" to n.ip,
         n.mac?.let { "MAC" to it },
-        n.linkMbps?.let { "Link speed" to "$it Mbps" },
+        n.linkMbps?.let { "连接速度" to "$it Mbps" },
     ).forEach { (k, v) -> KeyValue(k, v) }
     Spacer(Modifier.height(8.dp))
-    Text("Data used", style = MaterialTheme.typography.titleSmall)
+    Text("已用流量", style = MaterialTheme.typography.titleSmall)
     Bars(n.traffic.map { it.app to (it.rxMb + it.txMb).toDouble() }, fmt = { Copy.mb(it.toInt()) })
     Spacer(Modifier.height(8.dp))
-    Text("Open connections", style = MaterialTheme.typography.titleSmall)
+    Text("打开的连接", style = MaterialTheme.typography.titleSmall)
     if (n.sockets.isEmpty()) EmptyLine("")
     n.sockets.forEach { s ->
         Row(Modifier.padding(vertical = 2.dp)) {

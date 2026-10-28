@@ -196,7 +196,7 @@ private fun MakeHomeDialog(app: AppInfo, action: Action, current: AppInfo?, apps
         title = { Text(Copy.makeHomeTitle(app.label)) },
         text = { Text(text) },
         confirmButton = { Button(onClick = if (asks) ({ askService = true }) else actions.confirm, enabled = !locked) { Text(Copy.MAKE_HOME) } },
-        dismissButton = { TextButton(onClick = actions.cancel) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = actions.cancel) { Text("取消") } },
     )
 }
 

@@ -1,3 +1,8 @@
+> **中文版 Fork 说明**
+>
+> 本仓库是 [man15h/tellyscope](https://github.com/man15h/tellyscope) 的 Fork，已做简体中文界面本地化，并新增“海信 VIDDA”品牌指引。原作者、GPL-3.0 许可证与 NOTICE 保持不变；本 Fork 非原作者官方发布，与原作者无关。
+> This is a fork of man15h/tellyscope with a Simplified Chinese UI localization. Original author, GPL-3.0 license and NOTICE are unchanged.
+
 # <img src="docs/logo/icon.svg" alt="" width="64" height="64" align="middle"> Tellyscope
 
 Debloat your Android TV, install apps, and browse and transfer files on it, all from your phone. No root, no PC.

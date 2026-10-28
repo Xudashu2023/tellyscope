@@ -113,11 +113,11 @@ import app.tellyscope.data.Suggestions
 import kotlinx.coroutines.launch
 
 /** The TV page's destinations, one job each, in the bottom bar. */
-enum class TvTab(val label: String) { Overview("Overview"), Apps("Apps"), Files("Files"), Tweaks("Tweaks") }
+enum class TvTab(val label: String) { Overview("总览"), Apps("应用"), Files("文件"), Tweaks("小工具") }
 
 private object TabIcons {
     val Apps = icon(
-        "Apps",
+        "应用",
         "M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z",
     )
     val Folder = icon("Folder", "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z")
@@ -141,7 +141,7 @@ private fun TvTab.icon() = when (this) {
 /**
  * The TV page as four tabs under a bottom bar, in place of one long scroll of folded sections.
  * Every tab leads with the TV itself, big and centred, Overview with a chip per TV to switch; scrolling
- * folds it into the app bar, with the overflow on the right. On Apps, "Search apps" pins under the
+ * folds it into the app bar, with the overflow on the right. On Apps, "搜索应用" pins under the
  * three buttons; opening it takes the top of the screen and hides the TV until it closes.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
@@ -394,15 +394,15 @@ fun DeviceTabsScreen(
                             ui.files.error == null && ui.files.list?.isEmpty() == true -> item {
                                 EmptyState(
                                     if (folder == TvFolder.MOVIES) TileIcons.Movie else TabIcons.Folder,
-                                    "Nothing in ${Copy.folder(folder)} yet",
-                                    "Files you send land here.",
+                                    "${Copy.folder(folder)}里还没有东西",
+                                    "你发送的文件会落在这里。",
                                 )
                             }
                             else -> item { FilesBlock(ui.files, state.clock(), actions) }
                         }
                     }
                     TvTab.Tweaks -> {
-                        if (offline) item { Muted("Connect to the TV to change its settings.") }
+                        if (offline) item { Muted("连接电视后才能更改它的设置。") }
                         else {
                             if (homeLaunchers(ui.apps).isNotEmpty()) item { Panel(Copy.HOME_SCREEN) { HomeScreenBlock(ui, actions) } }
                             item { Panel(Copy.TWEAKS) { TweaksBlock(ui, actions) } }
@@ -489,7 +489,7 @@ private fun AppMenu(state: UiState, actions: DeviceActions) {
             }
             val off = HistoryBook.leftDisabled(state.device.history).size
             SheetGroup(
-                { MenuRow(Icons.Default.Edit, "Rename this TV") { pick { renaming = true } } },
+                { MenuRow(Icons.Default.Edit, "给这台电视改名") { pick { renaming = true } } },
                 { MenuRow(HistoryIcons.History, Copy.HISTORY, Copy.stillOff(off).takeIf { off > 0 }, dot = { if (fresh) MenuDot(false, true) }) { pick(actions.history) } },
                 {
                     MenuRow(
@@ -502,7 +502,7 @@ private fun AppMenu(state: UiState, actions: DeviceActions) {
             )
             Text("Tellyscope", style = MaterialTheme.typography.labelLarge, color = c.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp))
             SheetGroup(
-                { MenuRow(Icons.Default.Settings, "Settings") { pick(actions.settings) } },
+                { MenuRow(Icons.Default.Settings, "设置") { pick(actions.settings) } },
                 { MenuRow(Icons.Default.Share, Copy.SHARE) { pick { shareTellyscope(context) } } },
                 { MenuRow(Icons.Default.Info, "About & licences") { pick { about = true } } },
             )
@@ -566,14 +566,14 @@ internal fun MenuBlock(items: @Composable () -> Unit) {
     ) { Column { items() } }
 }
 
-/** "Search apps" under the Apps buttons, pinned with them; a tap opens the search at the top. */
+/** "搜索应用" under the Apps buttons, pinned with them; a tap opens the search at the top. */
 @Composable
 private fun SearchPill(enabled: Boolean, onClick: () -> Unit) {
     Surface(onClick = onClick, enabled = enabled, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(16.dp))
-            Text("Search apps", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("搜索应用", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -593,7 +593,7 @@ private fun SearchHeader(query: String, onQuery: (String) -> Unit, onClose: () -
                 TextField(
                     value = query,
                     onValueChange = onQuery,
-                    placeholder = { Text("Search apps") },
+                    placeholder = { Text("搜索应用") },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -692,7 +692,7 @@ private fun SuggestedCard(lists: Suggestions?, d: DebloatState, offline: Boolean
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyLarge,
                 )
-                TextButton(onClick = onChanges) { Text("See changes") }
+                TextButton(onClick = onChanges) { Text("查看更改") }
             }
             if (d.back > 0) {
                 Text(
@@ -713,7 +713,7 @@ private fun SuggestedCard(lists: Suggestions?, d: DebloatState, offline: Boolean
             }
             note?.let { Text(it, Modifier.padding(end = 8.dp), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant) }
             if (lists is Suggestions.Ready) {
-                Text("Lists adapted from cleanyourtv (MIT).", Modifier.padding(end = 8.dp), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                Text("清单改编自 cleanyourtv（MIT 协议）。", Modifier.padding(end = 8.dp), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             }
         }
     }
@@ -728,7 +728,7 @@ private fun AndroidCard(state: UiState, snap: Snapshot?, offline: Boolean, onUpd
             Icons.Default.Info,
             device.android?.let { "Android $it" } ?: "Android",
             (snap?.softwareMonth ?: device.lastKnown?.softwareMonth)?.let { "Updated ${Copy.month(it)}" },
-            "Check for updates", !offline, onUpdates,
+            "检查更新", !offline, onUpdates,
         )
     }
 }

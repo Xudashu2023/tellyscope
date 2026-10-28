@@ -105,14 +105,14 @@ fun ResetScreen(state: UiState, actions: ResetActions) {
                     plan == null || (plan.changes == 0 && !ui.ran) -> Unit
                     ui.running != null -> Button(onClick = {}, enabled = false) { Text(Copy.RESETTING) }
                     ui.ran -> {
-                        if (ui.failed.isEmpty()) Button(onClick = actions.back) { Text("Done") }
+                        if (ui.failed.isEmpty()) Button(onClick = actions.back) { Text("已完成") }
                         else {
-                            TextButton(onClick = actions.back) { Text("Done") }
+                            TextButton(onClick = actions.back) { Text("已完成") }
                             Button(onClick = actions.retry) { Text(Copy.tryAgain(ui.failed.singleOrNull()?.app?.label)) }
                         }
                     }
                     else -> {
-                        TextButton(onClick = actions.back) { Text("Cancel") }
+                        TextButton(onClick = actions.back) { Text("取消") }
                         Button(onClick = actions.reset) { Text(Copy.RESET_BUTTON) }
                     }
                 }
@@ -123,12 +123,12 @@ fun ResetScreen(state: UiState, actions: ResetActions) {
             when {
                 ui.error != null -> Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     EmptyState(Icons.Default.Warning, "Couldn't read the TV", ui.error)
-                    TextButton(onClick = actions.reload) { Text("Try again") }
+                    TextButton(onClick = actions.reload) { Text("再试一次") }
                 }
                 plan == null -> Column(Modifier.fillMaxWidth().padding(top = 96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     LoadingIndicator(Modifier.size(48.dp))
                     Spacer(Modifier.height(16.dp))
-                    Text("Reading the TV…", style = MaterialTheme.typography.titleSmall)
+                    Text("正在读取电视…", style = MaterialTheme.typography.titleSmall)
                 }
                 // Try again runs on this screen too, so a run in progress comes before the last run's result.
                 ui.running == null && ui.ran -> Result(plan, ui.failed)
@@ -229,7 +229,7 @@ private fun Section(plan: ResetPlan, part: ResetPart, status: Status?) {
                 null -> Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = if (open) "Hide the list" else "Show the list")
                 Status.Running -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 Status.Waiting -> Icon(ResetIcons.Waiting, contentDescription = "Waiting", tint = c.onSurfaceVariant)
-                Status.Done -> Icon(HistoryIcons.TurnedOn, contentDescription = "Done", tint = c.primary)
+                Status.Done -> Icon(HistoryIcons.TurnedOn, contentDescription = "已完成", tint = c.primary)
             }
         }
         if (open && status == null) {

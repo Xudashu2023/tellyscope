@@ -67,7 +67,7 @@ fun ActionTiles(actions: DeviceActions, count: Int, todo: Boolean, disabling: Bo
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Tile(Icons.Default.Add, "Install app", actions.pickApp, Modifier.weight(1f))
         Tile(
-            Broom, if (disabling) "Disabling…" else "Debloat", onDebloat, Modifier.weight(1f),
+            Broom, if (disabling) "Disabling…" else "精简", onDebloat, Modifier.weight(1f),
             enabled = !disabling, primary = todo, badge = count.takeIf { todo && it > 0 },
         )
         // Where the file lands is the user's choice, every time, not whatever folder was last shown.
@@ -78,7 +78,7 @@ fun ActionTiles(actions: DeviceActions, count: Int, todo: Boolean, disabling: Bo
             DropdownMenu(choosing, onDismissRequest = { choosing = false }) {
                 TvFolder.entries.forEach { f ->
                     DropdownMenuItem(
-                        text = { Text("To ${Copy.folder(f)}") },
+                        text = { Text("发送到${Copy.folder(f)}") },
                         onClick = { choosing = false; actions.pickFile(f) },
                     )
                 }
@@ -153,7 +153,7 @@ fun FilesBlock(files: FilesUi, now: Long, actions: DeviceActions) {
         else -> {
             list.forEach { f -> FileRow(f, now) { actions.saveFile(f) } }
             // Only with files to tap; an empty folder shows its own page instead.
-            if (list.isNotEmpty()) Muted("Tap a file to save a copy on your phone.")
+            if (list.isNotEmpty()) Muted("点一个文件可保存一份到手机。")
         }
     }
 }
@@ -172,7 +172,7 @@ private fun FileRow(f: TvFile, now: Long, onSave: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onSave) { Text("Save") }
+        TextButton(onClick = onSave) { Text("保存") }
     }
 }
 
@@ -197,8 +197,8 @@ fun SideloadDialog(s: SideloadUi, actions: DeviceActions) {
         title = {
             Text(
                 when (s.step) {
-                    SideloadUi.Step.Reading -> "Reading the app"
-                    SideloadUi.Step.Failed -> app?.let { "Couldn't install ${it.label}" } ?: "Can't install that"
+                    SideloadUi.Step.Reading -> "正在读取应用"
+                    SideloadUi.Step.Failed -> app?.let { "Couldn't install ${it.label}" } ?: "无法安装这个"
                     SideloadUi.Step.Installed -> Copy.installed(kind ?: InstallKind.NEW, app?.label.orEmpty())
                     else -> app?.label.orEmpty()
                 },
@@ -244,7 +244,7 @@ fun SideloadDialog(s: SideloadUi, actions: DeviceActions) {
                         if (sending) LinearWavyProgressIndicator(progress = { f }, Modifier.fillMaxWidth())
                         else LinearWavyProgressIndicator(Modifier.fillMaxWidth())
                         Text(
-                            if (sending) "Sending to the TV · ${(f * 100).toInt()}%" else "Installing on the TV…",
+                            if (sending) "正在发送到电视 · ${(f * 100).toInt()}%" else "正在电视上安装…",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Muted(Copy.INSTALL_KEEP_OPEN)
@@ -252,7 +252,7 @@ fun SideloadDialog(s: SideloadUi, actions: DeviceActions) {
                     SideloadUi.Step.Failed -> {
                         Text(s.error.orEmpty(), style = MaterialTheme.typography.bodyMedium)
                         s.detail?.takeIf { it.isNotBlank() }?.let {
-                            Text("The TV said: $it", style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                            Text("电视说：$it", style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     else -> Unit
@@ -265,16 +265,16 @@ fun SideloadDialog(s: SideloadUi, actions: DeviceActions) {
                     onClick = actions.install,
                     enabled = kind != InstallKind.DOWNGRADE || s.allowDowngrade,
                 ) { Text(Copy.installButton(kind)) }
-                SideloadUi.Step.Installed -> Button(onClick = actions.openInstalled) { Text("Open on TV") }
+                SideloadUi.Step.Installed -> Button(onClick = actions.openInstalled) { Text("在电视上打开") }
                 SideloadUi.Step.Failed -> Button(onClick = actions.closeSideload) { Text("OK") }
                 else -> Unit
             }
         },
         dismissButton = {
             when (s.step) {
-                SideloadUi.Step.Reading, SideloadUi.Step.Ready -> TextButton(onClick = actions.closeSideload) { Text("Cancel") }
-                SideloadUi.Step.Installed -> TextButton(onClick = actions.closeSideload) { Text("Done") }
-                SideloadUi.Step.Failed -> TextButton(onClick = { actions.reportInstall(s) }) { Text("Report a problem") }
+                SideloadUi.Step.Reading, SideloadUi.Step.Ready -> TextButton(onClick = actions.closeSideload) { Text("取消") }
+                SideloadUi.Step.Installed -> TextButton(onClick = actions.closeSideload) { Text("已完成") }
+                SideloadUi.Step.Failed -> TextButton(onClick = { actions.reportInstall(s) }) { Text("反馈问题") }
                 else -> Unit
             }
         },
@@ -288,7 +288,7 @@ fun TransferDialog(t: TransferUi, onCancel: () -> Unit) {
     AlertDialog(
         onDismissRequest = {},
         properties = Sticky,
-        title = { Text(if (t.toTv) "Sending to ${Copy.folder(t.folder)}" else "Saving to your phone") },
+        title = { Text(if (t.toTv) "正在发送到${Copy.folder(t.folder)}" else "正在保存到手机") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(t.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.MiddleEllipsis)
@@ -296,13 +296,13 @@ fun TransferDialog(t: TransferUi, onCancel: () -> Unit) {
                 if (f != null) LinearWavyProgressIndicator(progress = { f }, Modifier.fillMaxWidth())
                 else LinearWavyProgressIndicator(Modifier.fillMaxWidth())
                 Text(
-                    t.progress?.let { p -> p.total?.let { "${Copy.bytes(p.done)} of ${Copy.bytes(it)}" } ?: Copy.bytes(p.done) } ?: "Starting…",
+                    t.progress?.let { p -> p.total?.let { "${Copy.bytes(p.done)} of ${Copy.bytes(it)}" } ?: Copy.bytes(p.done) } ?: "开始…",
                     style = SmallNumber,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } },
     )
 }

@@ -265,17 +265,17 @@ fun RemoteScreen(
                             val (outer, inner) = 28.dp to 4.dp
                             val tall = Modifier.fillMaxWidth().height(72.dp)
                             KeySurface(
-                                RemoteKey.VOLUME_UP, "Volume up", live, actions.press, RoundedCornerShape(outer, outer, inner, inner),
+                                RemoteKey.VOLUME_UP, "音量+", live, actions.press, RoundedCornerShape(outer, outer, inner, inner),
                                 MaterialTheme.colorScheme.secondaryContainer, tall,
                             ) { Icon(RemoteIcons.VolumeUp, null) }
                             KeySurface(
-                                RemoteKey.VOLUME_DOWN, "Volume down", live, actions.press, RoundedCornerShape(inner, inner, outer, outer),
+                                RemoteKey.VOLUME_DOWN, "音量-", live, actions.press, RoundedCornerShape(inner, inner, outer, outer),
                                 MaterialTheme.colorScheme.secondaryContainer, tall,
                             ) { Icon(RemoteIcons.VolumeDown, null) }
                         }
                     }
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        RoundKey(RemoteKey.BACK, "Back", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                        RoundKey(RemoteKey.BACK, "返回", live, actions.press, Modifier.align(Alignment.CenterStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
                         RoundKey(RemoteKey.HOME, "Home", live, actions.press, size = 80.dp) { Icon(Icons.Outlined.Home, null, Modifier.size(32.dp)) }
                         RoundKey(RemoteKey.MENU, "Menu", live, actions.press, Modifier.align(Alignment.CenterEnd)) { Icon(Icons.Default.Menu, null) }
                     }
@@ -287,11 +287,11 @@ fun RemoteScreen(
                         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             val (outer, inner) = 32.dp to 4.dp
                             KeySurface(
-                                RemoteKey.VOLUME_DOWN, "Volume down", live, actions.press, RoundedCornerShape(outer, inner, inner, outer),
+                                RemoteKey.VOLUME_DOWN, "音量-", live, actions.press, RoundedCornerShape(outer, inner, inner, outer),
                                 MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
                             ) { Icon(RemoteIcons.VolumeDown, null) }
                             KeySurface(
-                                RemoteKey.VOLUME_UP, "Volume up", live, actions.press, RoundedCornerShape(inner, outer, outer, inner),
+                                RemoteKey.VOLUME_UP, "音量+", live, actions.press, RoundedCornerShape(inner, outer, outer, inner),
                                 MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f).height(64.dp),
                             ) { Icon(RemoteIcons.VolumeUp, null) }
                         }
@@ -371,7 +371,7 @@ private fun DPad(enabled: Boolean, press: suspend (RemoteKey) -> Boolean, size: 
             KeySurface(RemoteKey.LEFT, "Left", enabled, press, CircleShape, Color.Transparent, arrow.align(Alignment.CenterStart)) {
                 Icon(Icons.Default.KeyboardArrowLeft, null, glyph, tint = tint)
             }
-            KeySurface(RemoteKey.RIGHT, "Right", enabled, press, CircleShape, Color.Transparent, arrow.align(Alignment.CenterEnd)) {
+            KeySurface(RemoteKey.RIGHT, "右", enabled, press, CircleShape, Color.Transparent, arrow.align(Alignment.CenterEnd)) {
                 Icon(Icons.Default.KeyboardArrowRight, null, glyph, tint = tint)
             }
             KeySurface(
@@ -460,7 +460,7 @@ private fun Keyboard(enabled: Boolean, type: (String) -> String?, press: suspend
         value = text,
         onValueChange = { text = it; error = null },
         enabled = enabled,
-        label = { Text("Type on the TV") },
+        label = { Text("在电视上输入") },
         supportingText = if (error != null || hint) ({ Text(error ?: Copy.TYPE_HINT) }) else null,
         isError = error != null,
         singleLine = true,
@@ -489,8 +489,8 @@ fun RebootDialog(onRestart: () -> Unit, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(Copy.REBOOT_TITLE) },
         text = { Text(Copy.REBOOT_TEXT) },
-        confirmButton = { Button(onClick = onRestart) { Text("Restart") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { Button(onClick = onRestart) { Text("重启") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -506,7 +506,7 @@ fun RestartingCard(restart: Restart, now: Long) {
             LoadingIndicator(Modifier.size(48.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Restarting", style = MaterialTheme.typography.titleSmall)
+                Text("正在重启", style = MaterialTheme.typography.titleSmall)
                 Text(Copy.restarting((now - restart.since) / 60_000), style = MaterialTheme.typography.bodyMedium)
             }
         }
@@ -540,16 +540,16 @@ private fun RestartDialog(restart: Restart, now: Long, tvName: String, onHide: (
             icon = { StatusShape(RemoteIcons.HourglassTop, c.secondaryContainer, c.onSecondaryContainer) },
             title = { Text(Copy.RESTART_LATE_TITLE) },
             text = { Text(Copy.RESTART_LATE_TEXT) },
-            confirmButton = { Button(onClick = onRetry) { Text("Retry") } },
-            dismissButton = { TextButton(onClick = onHide) { Text("Close") } },
+            confirmButton = { Button(onClick = onRetry) { Text("重试") } },
+            dismissButton = { TextButton(onClick = onHide) { Text("关闭") } },
         )
         Restart.Phase.Lost -> AlertDialog(
             onDismissRequest = onStop,
             icon = { StatusShape(RemoteIcons.LinkOff, c.errorContainer, c.onErrorContainer) },
             title = { Text(Copy.restartLost(tvName)) },
             text = { Text(Copy.RESTART_LOST_TEXT) },
-            confirmButton = { Button(onClick = onRetry) { Text("Retry") } },
-            dismissButton = { TextButton(onClick = onStop) { Text("Close") } },
+            confirmButton = { Button(onClick = onRetry) { Text("重试") } },
+            dismissButton = { TextButton(onClick = onStop) { Text("关闭") } },
         )
     }
 }
@@ -607,7 +607,7 @@ private fun HandleRow(screenControl: Boolean, off: Boolean, live: Boolean, showT
 @Composable
 private fun RestartStatus(late: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "Show the restart", onClick = onClick),
+        Modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "显示重启", onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -679,8 +679,8 @@ private fun DockRow(dock: List<Docked>, apps: List<AppInfo>, enabled: Boolean, a
                     .zIndex(if (up) 1f else 0f),
             ) {
                 val moves = listOfNotNull(
-                    CustomAccessibilityAction("Move left") { actions.setDock(Dock.move(dock, i, i - 1)); true }.takeIf { i > 0 },
-                    CustomAccessibilityAction("Move right") { actions.setDock(Dock.move(dock, i, i + 1)); true }.takeIf { i < dock.lastIndex },
+                    CustomAccessibilityAction("左移") { actions.setDock(Dock.move(dock, i, i - 1)); true }.takeIf { i > 0 },
+                    CustomAccessibilityAction("右移") { actions.setDock(Dock.move(dock, i, i + 1)); true }.takeIf { i < dock.lastIndex },
                 )
                 DockTile(
                     info, up, enabled, moves,
@@ -758,8 +758,8 @@ private fun DockTile(
                 role = Role.Button
                 contentDescription = app.label
                 if (enabled) {
-                    onClick("Open on the TV") { onOpen(); true }
-                    onLongClick("Change or remove") { onMenu(); true }
+                    onClick("在电视上打开") { onOpen(); true }
+                    onLongClick("更换或移除") { onMenu(); true }
                     customActions = moves
                 }
             }

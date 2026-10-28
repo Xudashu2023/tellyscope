@@ -37,7 +37,7 @@ internal fun connectTitle(d: Device) = listOfNotNull(name(d), d.manufacturer ?: 
 
 /**
  * A TV that had allowed this phone took the access back, so Tellyscope stopped asking. Laid out like
- * "No answer from the TV"; the same page whether it happened on screen or the app was opened later,
+ * "电视没有回应"; the same page whether it happened on screen or the app was opened later,
  * only the time line differs. Connect again leads to the Allow screen; the nickname is kept.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,7 +47,7 @@ fun LoggedOutScreen(device: Device, loggedOutAt: Long, now: Long, onConnect: () 
         topBar = {
             TopAppBar(
                 title = {},
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") } },
             )
         },
         bottomBar = {
@@ -56,8 +56,8 @@ fun LoggedOutScreen(device: Device, loggedOutAt: Long, now: Long, onConnect: () 
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onBack) { Text("Back to TVs") }
-                Button(onClick = onConnect) { Text("Connect again") }
+                TextButton(onClick = onBack) { Text("回到电视列表") }
+                Button(onClick = onConnect) { Text("重新连接") }
             }
         },
     ) { pad ->

@@ -1073,7 +1073,7 @@ class TellyscopeViewModel(
      */
     fun openReport(kind: ReportKind, details: String = "", said: String? = null) {
         val tv = _state.value.selected?.takeIf { it.state == DeviceState.Online }
-        val log = synchronized(sessionLog) { sessionLog.toList() } + listOfNotNull(said?.let { "The TV said: $it" })
+        val log = synchronized(sessionLog) { sessionLog.toList() } + listOfNotNull(said?.let { "电视说：$it" })
         val connection = when (tv?.hit?.kind) {
             ScanKind.Classic -> Reports.Connection.PORT_5555
             ScanKind.Wireless -> Reports.Connection.WIRELESS_DEBUGGING
@@ -1102,7 +1102,7 @@ class TellyscopeViewModel(
         setSideload(null)
     }
 
-    /** "Open on TV" after a successful install. */
+    /** "在电视上打开" after a successful install. */
     fun openInstalled() {
         val pkg = _state.value.device.sideload?.app?.info?.packageName ?: return
         closeSideload()
@@ -1404,7 +1404,7 @@ class TellyscopeViewModel(
         }
     }
 
-    /** "Try again" after a computer was allowed again: clear again, no need to ask twice. */
+    /** "再试一次" after a computer was allowed again: clear again, no need to ask twice. */
     fun retryRemoval() = removeAccess()
 
     /** "Check again" after a connection was left open: reads the TV again, clears nothing. */
@@ -1438,7 +1438,7 @@ class TellyscopeViewModel(
         }
     }
 
-    /** "Pick your TV": remember the choice for this TV and show its list. */
+    /** "选择你的电视": remember the choice for this TV and show its list. */
     fun pickList(listId: String) {
         val id = _state.value.selectedId ?: return
         _state.update { it.copy(device = it.device.copy(lists = null)) }
@@ -1485,12 +1485,12 @@ class TellyscopeViewModel(
         }
     }
 
-    /** "Get it" or "Later": the offer goes away until the next check. */
+    /** "获取" or "以后再说": the offer goes away until the next check. */
     fun updateLater() {
         _state.update { it.copy(update = null) }
     }
 
-    /** "Skip this version": never offered again; a later release still is. */
+    /** "跳过这个版本": never offered again; a later release still is. */
     fun skipUpdate() {
         val version = _state.value.update?.version ?: return
         _state.update { it.copy(update = null) }

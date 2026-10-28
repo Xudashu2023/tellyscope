@@ -48,8 +48,8 @@ fun WelcomeScreen(askLocalNetwork: Boolean, onContinue: () -> Unit, onSkip: () -
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onSkip) { Text("Skip") }
-                Button(onClick = onContinue) { Text("Continue") }
+                TextButton(onClick = onSkip) { Text("跳过") }
+                Button(onClick = onContinue) { Text("继续") }
             }
         },
     ) { pad ->
@@ -65,9 +65,9 @@ fun WelcomeScreen(askLocalNetwork: Boolean, onContinue: () -> Unit, onSkip: () -
                 // The foreground keeps its art inside the adaptive-icon safe zone; oversize it so the art fills the tile.
                 Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, Modifier.requiredSize(108.dp))
             }
-            Text("Welcome to Tellyscope", style = MaterialTheme.typography.headlineMedium)
+            Text("欢迎使用 Tellyscope", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "See what's running on your Android TV, and turn off the apps you don't need. All from your phone, over Wi-Fi.",
+                "查看 Android 电视上正在运行什么，关闭不需要的应用，全部用手机通过 Wi-Fi 完成。",
                 style = MaterialTheme.typography.bodyLarge,
             )
             Card(
@@ -86,7 +86,7 @@ fun WelcomeScreen(askLocalNetwork: Boolean, onContinue: () -> Unit, onSkip: () -
             }
             if (askLocalNetwork) {
                 Text(
-                    "Android asks before an app talks to other devices on your Wi-Fi. Tellyscope only connects to the TVs you pick.",
+                    "Android 会在应用与同一 Wi-Fi 上的其他设备通信前先征求同意。Tellyscope 只连接你选中的电视。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -96,7 +96,7 @@ fun WelcomeScreen(askLocalNetwork: Boolean, onContinue: () -> Unit, onSkip: () -
 }
 
 private val steps = listOf(
-    "Turn on debugging on your TV. The next screen shows how for your brand.",
-    "Tellyscope finds the TV on your Wi-Fi.",
-    "Type the code the TV shows, or choose Allow when it asks.",
+    "在电视上开启调试。下一屏会按你的品牌说明步骤。",
+    "Tellyscope 会在 Wi-Fi 上找到电视。",
+    "输入电视显示的配对码，或在它询问时选择允许。",
 )

@@ -44,50 +44,57 @@ import androidx.compose.ui.unit.dp
  */
 class TvBrand(val name: String, val unlock: String, val debugTitle: String, val debug: String, val pair: String?)
 
-private const val ANDROID_TV_PAIR = "**Device Preferences → Developer options → Wireless debugging → Pair device with pairing code**"
+private const val ANDROID_TV_PAIR = "**设备偏好设置 → 开发者选项 → 无线调试 → 使用配对码配对设备**"
 
 val brands = listOf(
     TvBrand(
         "Google TV",
-        unlock = "On the TV: **Settings → System → About**. Press OK on **Android TV OS build** 7 times, until it says you're a developer.",
-        debugTitle = "Turn on Wireless debugging",
-        debug = "Back to **System → Developer options**. Turn on **Wireless debugging**. Older TVs call it **USB debugging**.",
-        pair = "**System → Developer options → Wireless debugging → Pair device with pairing code**",
+        unlock = "在电视上：**设置 → 系统 → 关于**。在 **Android TV OS 版本** 上按 OK 7 次，直到提示你已成为开发者。",
+        debugTitle = "开启无线调试",
+        debug = "回到 **系统 → 开发者选项**。开启 **无线调试**。较旧电视叫 **USB 调试**。",
+        pair = "**系统 → 开发者选项 → 无线调试 → 使用配对码配对设备**",
     ),
     TvBrand(
         "Android TV",
-        unlock = "On the TV: **Settings → Device Preferences → About**. Press OK on **Build** 7 times.",
-        debugTitle = "Turn on Wireless debugging",
-        debug = "Back to **Device Preferences → Developer options**. Turn on **Wireless debugging**. Older TVs have **USB debugging** and **Network debugging** instead: turn on both.",
+        unlock = "在电视上：**设置 → 设备偏好设置 → 关于**。在 **版本** 上按 OK 7 次。",
+        debugTitle = "开启无线调试",
+        debug = "回到 **设备偏好设置 → 开发者选项**。开启 **无线调试**。较旧电视改用 **USB 调试** 和 **网络调试**：两个都开启。",
         pair = ANDROID_TV_PAIR,
     ),
     TvBrand(
         "Fire TV",
-        unlock = "On the TV: **Settings → My Fire TV → About**. Press OK on the first row, your Fire TV's name, 7 times.",
-        debugTitle = "Turn on ADB debugging",
-        debug = "Back to **My Fire TV → Developer options**. Turn on **ADB debugging**.",
+        unlock = "在电视上：**设置 → 我的 Fire TV → 关于**。在第一行（你的 Fire TV 名字）上按 OK 7 次。",
+        debugTitle = "开启 ADB 调试",
+        debug = "回到 **我的 Fire TV → 开发者选项**。开启 **ADB 调试**。",
         pair = null,
     ),
     TvBrand(
         "Xiaomi",
-        unlock = "On the TV: **Settings → Device Preferences → About**. Press OK on **Build** 7 times.",
-        debugTitle = "Turn on Wireless debugging",
-        debug = "Back to **Device Preferences → Developer options**. Turn on **Wireless debugging**. Older TVs call it **USB debugging**.",
+        unlock = "在电视上：**设置 → 设备偏好设置 → 关于**。在 **版本** 上按 OK 7 次。",
+        debugTitle = "开启无线调试",
+        debug = "回到 **设备偏好设置 → 开发者选项**。开启 **无线调试**。较旧电视叫 **USB 调试**。",
         pair = ANDROID_TV_PAIR,
+    ),
+    TvBrand(
+        "海信 VIDDA",
+        unlock = "在电视上：**设置 → 关于**。连点 **版本号** 7 次。（不同固件菜单名略有出入）",
+        debugTitle = "开启无线调试",
+        debug = "回到 **开发者选项**。开启 **无线调试**。较旧机型叫 **USB 调试** 和 **网络调试**：两个都开启。",
+        pair = "**开发者选项 → 无线调试 → 使用配对码配对设备**",
     ),
     TvBrand(
         "XGIMI",
-        unlock = "On the TV: **Settings → Device Preferences → About**. Press OK on **Build** 7 times.",
-        debugTitle = "Turn on Wireless debugging",
-        debug = "Back to **Device Preferences → Developer options**. Turn on **Wireless debugging**. Older projectors have **USB debugging**, then **Network debugging** if it's listed: turn on both.",
+        unlock = "在电视上：**设置 → 设备偏好设置 → 关于**。在 **版本** 上按 OK 7 次。",
+        debugTitle = "开启无线调试",
+        debug = "回到 **设备偏好设置 → 开发者选项**。开启 **无线调试**。较旧投影仪有 **USB 调试**，如有 **网络调试** 也一并开启。",
         pair = ANDROID_TV_PAIR,
     ),
     TvBrand(
-        "Other",
-        unlock = "On the TV, open **Settings**. Has **System**? It's Google TV: go to **System → About** and press OK on **Android TV OS build** 7 times. Has **Device Preferences**? It's Android TV: go to **Device Preferences → About** and press OK on **Build** 7 times.",
-        debugTitle = "Turn on Wireless debugging",
-        debug = "Back one level, open **Developer options**. Turn on **Wireless debugging**. Older TVs have **USB debugging**, and some **Network debugging** too: turn on what's there.",
-        pair = "**Developer options → Wireless debugging → Pair device with pairing code**",
+        "其他",
+        unlock = "在电视上打开 **设置**。有 **系统**？那是 Google TV：去 **系统 → 关于**，在 **Android TV OS 版本** 上按 OK 7 次。有 **设备偏好设置**？那是 Android TV：去 **设备偏好设置 → 关于**，在 **版本** 上按 OK 7 次。",
+        debugTitle = "开启无线调试",
+        debug = "退回上一级，打开 **开发者选项**。开启 **无线调试**。较旧电视有 **USB 调试**，有些还有 **网络调试**：有的都开启。",
+        pair = "**开发者选项 → 无线调试 → 使用配对码配对设备**",
     ),
 )
 
@@ -96,7 +103,7 @@ val brands = listOf(
 @Composable
 fun BrandChips(brand: TvBrand, onPick: (TvBrand) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Pick your TV", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("选择你的电视", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             brands.forEach { b ->
                 FilterChip(
@@ -111,15 +118,15 @@ fun BrandChips(brand: TvBrand, onPick: (TvBrand) -> Unit) {
 }
 
 /**
- * One step open at a time: "Done, next" ticks it off and opens the next, "Back" reopens the one
+ * One step open at a time: "完成，下一步" ticks it off and opens the next, "返回" reopens the one
  * before. The last step holds [findTvs], which is the live scan and whatever it found.
  */
 @Composable
 fun GuideSteps(brand: TvBrand, step: Int, onStep: (Int) -> Unit, findTvs: @Composable () -> Unit) {
     val steps = listOf(
-        Triple("Unlock developer options", brand.unlock, "Developer options unlocked"),
+        Triple("解锁开发者选项", brand.unlock, "开发者选项已解锁"),
         Triple(brand.debugTitle, brand.debug, brand.debugTitle.removePrefix("Turn on ") + " on"),
-        Triple("Find your TV", "", ""),
+        Triple("找到你的电视", "", ""),
     )
     Column(Modifier.animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())) {
         steps.forEachIndexed { i, (title, body, done) ->
@@ -144,8 +151,8 @@ fun GuideSteps(brand: TvBrand, step: Int, onStep: (Int) -> Unit, findTvs: @Compo
                         i == step -> {
                             Text(marked(body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { onStep(i + 1) }) { Text("Done, next") }
-                                if (i > 0) TextButton(onClick = { onStep(i - 1) }) { Text("Back") }
+                                Button(onClick = { onStep(i + 1) }) { Text("完成，下一步") }
+                                if (i > 0) TextButton(onClick = { onStep(i - 1) }) { Text("返回") }
                             }
                         }
                     }
@@ -165,30 +172,30 @@ private fun StepDot(n: Int, done: Boolean, current: Boolean) {
             .border(2.dp, if (filled) c.primary else c.outlineVariant, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (done) Icon(Icons.Default.Check, contentDescription = "Done", Modifier.size(18.dp), tint = c.onPrimary)
+        if (done) Icon(Icons.Default.Check, contentDescription = "已完成", Modifier.size(18.dp), tint = c.onPrimary)
         else Text("$n", style = MaterialTheme.typography.labelLarge, color = if (current) c.onPrimary else c.outline)
     }
 }
 
-/** "Can't find your TV?": the fixes that used to sit under the guide as small print. */
+/** "找不到电视？": the fixes that used to sit under the guide as small print. */
 @Composable
 fun HelpDialog(brand: TvBrand, onAddByIp: () -> Unit, onDismiss: () -> Unit) {
     val tips = buildList {
-        add("Keep the phone and the TV on the same Wi-Fi. Guest networks often keep devices apart.")
-        add("Debugging switched itself off? Some TVs reset it after a restart. Turn it back on and this screen finds the TV again.")
-        if (brand.name == "Fire TV") add("No Developer options after 7 presses? Newer Fire TVs run Vega OS, which isn't Android, and Tellyscope can't reach them.")
-        add("Still nothing? Add the TV by its IP address, from the TV's network settings.")
+        add("让手机和电视保持在同一 Wi-Fi。访客网络常常会把设备隔开。")
+        add("调试自己关掉了？有些电视重启后会重置。请重新打开，本屏会再次找到电视。")
+        if (brand.name == "Fire TV") add("按 7 次后还是没有开发者选项？较新的 Fire TV 运行 Vega OS，不是 Android，Tellyscope 连不上它们。")
+        add("还是没有？请从电视的网络设置里用 IP 地址添加电视。")
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Can't find your TV?") },
+        title = { Text("找不到电视？") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 tips.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
         },
-        confirmButton = { Button(onClick = { onDismiss(); onAddByIp() }) { Text("Add by IP address") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { Button(onClick = { onDismiss(); onAddByIp() }) { Text("用 IP 地址添加") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
     )
 }
 

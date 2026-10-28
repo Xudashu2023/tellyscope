@@ -57,7 +57,7 @@ import app.tellyscope.data.HistoryEntry
 
 /**
  * Every change Tellyscope made on the TV, newest first, each with its Undo, and Restore everything
- * on top while apps it turned off are still off. Opened from ⋮ and from "See changes".
+ * on top while apps it turned off are still off. Opened from ⋮ and from "查看更改".
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,9 +133,9 @@ internal fun HistoryList(
                         if (restoring) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(8.dp))
-                            Text("Turning apps back on…")
+                            Text("正在重新开启应用…")
                         } else {
-                            Text("Restore everything ($off)")
+                            Text("全部恢复（$off 个）")
                         }
                     }
                 }
@@ -159,7 +159,7 @@ internal fun HistoryList(
                         ) {
                             Icon(Icons.Default.Check, contentDescription = null, Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Undone")
+                            Text("已撤销")
                         }
                         h.undo != null -> TextButton(onClick = { if (h.undo == Action.Disable) disabling = h else onUndo(h) }, enabled = !busy) { Text(Copy.undo(h.undo)) }
                     }
@@ -180,7 +180,7 @@ internal fun groupShape(i: Int, n: Int) = RoundedCornerShape(
 internal object HistoryIcons {
     // Material's history: a clock with an arrow round it. Absolute commands only, as in TileIcons.
     val History = icon(
-        "History",
+        "历史记录",
         "M13 3A9 9 0 0 0 4 12H1L4.89 15.89L4.96 16.03L9 12H6C6 8.13 9.13 5 13 5S20 8.13 20 12S16.87 19 13 19" +
             "C11.07 19 9.32 18.21 8.06 16.94L6.64 18.36A8.954 8.954 0 0 0 13 21A9 9 0 0 0 13 3Z" +
             "M12 8V13L16.28 15.54L17 14.33L13.5 12.25V8Z",

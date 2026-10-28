@@ -39,7 +39,7 @@ import app.tellyscope.data.AppInfo
 /**
  * The separate yes for a launcher's accessibility service, which can see the screen, so it is
  * never turned on as a side effect of a switch. [other] is the launcher Home may open without it;
- * [dismissLabel] is "Switch without it" during a switch, "Not now" after one.
+ * [dismissLabel] is "Switch without it" during a switch, "以后再说" after one.
  */
 @Composable
 fun ServiceDialog(app: String, other: String, onTurnOn: () -> Unit, dismissLabel: String, onOther: () -> Unit, onDismiss: () -> Unit) {

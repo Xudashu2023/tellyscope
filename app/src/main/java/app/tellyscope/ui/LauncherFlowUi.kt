@@ -121,7 +121,7 @@ fun LauncherScreen(device: Device, flow: LauncherFlow, apps: List<AppInfo>, acti
         topBar = {
             TopAppBar(
                 title = { Text(if (flow.step == LauncherFlow.Step.Pick) Copy.CHOOSE_HOME else Copy.INSTALL_HOME) },
-                navigationIcon = { IconButton(onClick = actions.close) { Icon(Icons.Default.Close, contentDescription = "Close") } },
+                navigationIcon = { IconButton(onClick = actions.close) { Icon(Icons.Default.Close, contentDescription = "关闭") } },
             )
         },
         bottomBar = {

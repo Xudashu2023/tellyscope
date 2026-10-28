@@ -97,7 +97,7 @@ fun ReportScreen(r: ReportUi, onOpened: (Report) -> Unit, close: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text(if (newTv) "Help add this TV" else "Report a problem")
+                        Text(if (newTv) "帮助添加这台电视" else "反馈问题")
                         Text(
                             if (newTv) "Opens cleanyourtv’s “My TV” form on GitHub" else "Opens an issue on Tellyscope’s GitHub",
                             style = MaterialTheme.typography.bodyMedium,
@@ -105,7 +105,7 @@ fun ReportScreen(r: ReportUi, onOpened: (Report) -> Unit, close: () -> Unit) {
                         )
                     }
                 },
-                navigationIcon = { IconButton(onClick = close) { Icon(Icons.Default.Close, contentDescription = "Close") } },
+                navigationIcon = { IconButton(onClick = close) { Icon(Icons.Default.Close, contentDescription = "关闭") } },
             )
         },
         bottomBar = {
@@ -134,8 +134,8 @@ fun ReportScreen(r: ReportUi, onOpened: (Report) -> Unit, close: () -> Unit) {
             // Read from the TV, so shown as facts rather than fields to edit.
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                 val tv = r.tv
-                val reading = if (r.reading) "Reading the TV…" else "No TV connected"
-                Fact(if (newTv) "TV model" else "TV", tv?.name ?: reading)
+                val reading = if (r.reading) "正在读取电视…" else "没有连接电视"
+                Fact(if (newTv) "电视型号" else "电视", tv?.name ?: reading)
                 HorizontalDivider(color = MaterialTheme.colorScheme.surface)
                 Fact("Android version and firmware build", tv?.android ?: reading)
             }
@@ -150,16 +150,16 @@ fun ReportScreen(r: ReportUi, onOpened: (Report) -> Unit, close: () -> Unit) {
             }
             OutlinedTextField(
                 details, { details = it },
-                label = { Text("Details (optional)") },
+                label = { Text("详情（可选）") },
                 placeholder = { Text(if (newTv) "Anything else?" else "What were you doing?") },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text("What gets sent", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Text("会发送什么", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             if (report == null) {
                 Text(
                     when {
-                        newTv && r.tv == null -> if (r.reading) "Reading the TV…" else "Connect the TV to list its apps."
+                        newTv && r.tv == null -> if (r.reading) "正在读取电视…" else "连接电视以列出它的应用。"
                         newTv -> "Pick how far you got to see the report."
                         else -> "Pick what happened to see the report."
                     },
@@ -187,7 +187,7 @@ fun AddRestScreen(posted: Report, back: () -> Unit, done: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Add the rest")
+                        Text("补充其余内容")
                         Text(
                             "As a comment on your newest issue on ${posted.repo.substringAfter('/')}",
                             style = MaterialTheme.typography.bodyMedium,
@@ -195,7 +195,7 @@ fun AddRestScreen(posted: Report, back: () -> Unit, done: () -> Unit) {
                         )
                     }
                 },
-                navigationIcon = { IconButton(onClick = back) { Icon(Icons.Default.Close, contentDescription = "Close") } },
+                navigationIcon = { IconButton(onClick = back) { Icon(Icons.Default.Close, contentDescription = "关闭") } },
             )
         },
         bottomBar = {
@@ -232,15 +232,15 @@ private fun PostedCard(posted: Report, notNow: () -> Unit, addRest: () -> Unit) 
     val lines = posted.rest.orEmpty().lines().size - 1
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Posted it? Add the rest as a comment", style = MaterialTheme.typography.titleMedium)
+            Text("已经发了？把其余内容作为评论补充", style = MaterialTheme.typography.titleMedium)
             Text(
                 if (posted.repo == Reports.CLEANYOURTV) "$lines apps didn’t fit in the link. Adding them helps cleanyourtv write the full list."
                 else "Part of the report didn’t fit in the link. Adding it helps us find the problem.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                TextButton(onClick = notNow) { Text("Not now") }
-                Button(onClick = addRest) { Text("Add the rest") }
+                TextButton(onClick = notNow) { Text("以后再说") }
+                Button(onClick = addRest) { Text("补充其余内容") }
             }
         }
     }
@@ -260,7 +260,7 @@ private fun <T> Choice(label: String, value: T?, options: List<T>, text: (T) -> 
     var open by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(open, onExpandedChange = { open = it }) {
         OutlinedTextField(
-            value?.let(text) ?: "Choose one", {},
+            value?.let(text) ?: "选一个", {},
             readOnly = true,
             label = { Text(label) },
             supportingText = help?.let { { Text(it) } },
@@ -303,7 +303,7 @@ private fun Actions(note: String, cancel: () -> Unit, action: @Composable () -> 
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                TextButton(onClick = cancel) { Text("Cancel") }
+                TextButton(onClick = cancel) { Text("取消") }
                 action()
             }
         }

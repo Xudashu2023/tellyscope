@@ -29,22 +29,22 @@ import java.util.Locale
  */
 object Copy {
     fun button(action: Action) = when (action) {
-        Action.Stop -> "Stop"
-        Action.Disable -> "Disable"
-        Action.Enable -> "Turn on"
-        Action.Open -> "Open"
-        Action.Uninstall -> "Uninstall"
+        Action.Stop -> "停止"
+        Action.Disable -> "禁用"
+        Action.Enable -> "开启"
+        Action.Open -> "打开"
+        Action.Uninstall -> "卸载"
         Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack, Action.Reset -> error("$action has its own button")
     }
 
     fun confirm(action: Action) = when (action) {
-        Action.Stop -> "Yes, stop it"
-        Action.Disable -> "Yes, disable it"
-        Action.Enable -> "Yes, turn it on"
-        Action.Open -> "Yes, open it"
-        Action.Uninstall -> "Yes, uninstall it"
-        Action.Home -> "Yes, switch home screen"
-        Action.HomeBack -> "Yes, switch back"
+        Action.Stop -> "是，停止它"
+        Action.Disable -> "是，禁用它"
+        Action.Enable -> "是，开启它"
+        Action.Open -> "是，打开它"
+        Action.Uninstall -> "是，卸载它"
+        Action.Home -> "是，切换桌面"
+        Action.HomeBack -> "是，切换回去"
         Action.Change, Action.ClearCaches, Action.Reset -> error("$action isn't an app action")
     }
 
@@ -54,55 +54,55 @@ object Copy {
      */
     fun explain(action: Action, app: String, pkg: String) = "$app ($pkg)".let { who ->
         when (action) {
-            Action.Stop -> "Stops $who until you open it again."
-            Action.Disable -> "Hides $who and stops it running. Nothing is deleted; you can turn it back on here."
-            Action.Enable -> "Turns $who back on."
-            Action.Open -> "Opens $who on the TV."
-            Action.Uninstall -> "Removes $who and everything saved in it. This can't be undone; to get it back, install it again."
+            Action.Stop -> "停止 $who，直到你再次打开它。"
+            Action.Disable -> "隐藏 $who 并停止它运行。不会删除任何东西，你可以在这里重新开启它。"
+            Action.Enable -> "重新开启 $who。"
+            Action.Open -> "在电视上打开 $who。"
+            Action.Uninstall -> "删除 $who 及其保存的全部内容。此操作无法撤销；要恢复需重新安装。"
             Action.Change, Action.ClearCaches, Action.Home, Action.HomeBack, Action.Reset -> error("$action isn't a one-app action")
         }
     }
 
     fun done(action: Action, app: String) = when (action) {
-        Action.Stop -> "Stopped $app"
-        Action.Disable -> "Disabled $app"
-        Action.Enable -> "Turned on $app"
-        Action.Open -> "Opened $app"
-        Action.Uninstall -> "Uninstalled $app"
+        Action.Stop -> "已停止 $app"
+        Action.Disable -> "已禁用 $app"
+        Action.Enable -> "已开启 $app"
+        Action.Open -> "已打开 $app"
+        Action.Uninstall -> "已卸载 $app"
         // A setting's label is the whole sentence: "Private DNS set to …", as is a reset's.
         Action.Change, Action.Reset -> app
-        Action.ClearCaches -> "Cleared $app"
-        Action.Home -> "Made $app Home"
-        Action.HomeBack -> "Switched home back to $app"
+        Action.ClearCaches -> "已清除 $app"
+        Action.Home -> "已将 $app 设为桌面"
+        Action.HomeBack -> "已将桌面切换回 $app"
     }
 
     /** Said in the confirm before Stop, Disable or Uninstall of an app the TV's list keeps. */
-    const val KEEP_WARNING = "This TV's list says to keep this."
+    const val KEEP_WARNING = "这台电视的清单建议保留它。"
 
     /** Where the lists come from, for the Debloat screen and the snackbar after a change. */
     fun listSource(custom: String?) =
-        if (custom == null) "Lists from tellyscope-devices, built from cleanyourtv" else "Lists from ${sourceName(custom)}"
+        if (custom == null) "清单来自 tellyscope-devices，基于 cleanyourtv 制作" else "Lists from ${sourceName(custom)}"
 
     /** The Home screen card at the top of Tweaks: every launcher on the TV, and which one Home opens. */
-    const val HOME_SCREEN = "Home screen"
+    const val HOME_SCREEN = "桌面"
 
-    fun opensOnHome(app: String) = "$app opens when you press Home."
+    fun opensOnHome(app: String) = "按 Home 键时会打开 $app。"
 
-    const val NO_DEFAULT = "No default: pick one below."
-    const val ADDED = "Added"
+    const val NO_DEFAULT = "未设置默认桌面：请在下方选择。"
+    const val ADDED = "已添加"
 
-    fun builtIn(off: Boolean) = "Built into the TV" + if (off) " · turned off" else ""
+    fun builtIn(off: Boolean) = "电视自带" + if (off) " · 已关闭" else ""
 
-    const val CURRENT = "Current"
-    const val KEEPS_HOME = "Keeps Home with its accessibility service"
-    const val MAKE_HOME = "Make Home"
-    const val GET_LAUNCHER = "Get another launcher"
-    const val GET_LAUNCHER_TEXT = "Install one from the Play Store, like Projectivy or FLauncher. Switch back any time."
+    const val CURRENT = "当前"
+    const val KEEPS_HOME = "靠无障碍服务保持桌面"
+    const val MAKE_HOME = "设为桌面"
+    const val GET_LAUNCHER = "换个启动器"
+    const val GET_LAUNCHER_TEXT = "从 Play 商店安装一个，比如 Projectivy 或 FLauncher。随时可以切换回去。"
 
     /** The Apps tab's launcher rows: switching lives in the card, this opens it. */
-    const val HOME_SETTINGS = "Home screen settings"
+    const val HOME_SETTINGS = "桌面设置"
 
-    fun makeHomeTitle(app: String) = "Make $app the home screen?"
+    fun makeHomeTitle(app: String) = "把 $app 设为桌面吗？"
 
     /** A launcher the user added in place of the TV's own, which is turned off: otherwise many TVs switch back by themselves. */
     fun explainReplace(app: String, current: String, currentPkg: String, service: Boolean) = buildString {
@@ -146,76 +146,76 @@ object Copy {
     }
 
     /** The separate yes for a launcher's accessibility service: what it does, what it can see, how it goes. */
-    fun serviceTitle(app: String) = "Turn on $app's accessibility service?"
+    fun serviceTitle(app: String) = "开启 $app 的无障碍服务吗？"
 
     fun explainService(app: String, other: String) =
-        "It keeps the Home button opening $app. Without it, this TV's Home button may still open $other.\n\n" +
-            "An accessibility service can see what's on screen. Turn it on only if you trust $app.\n\n" +
-            "Undo in History, or making another launcher Home, turns it off."
+        "它能让 Home 键一直打开 $app。没有它，这台电视的 Home 键可能仍会打开 $other。\n\n" +
+            "无障碍服务可以看到屏幕内容。只有信任 $app 时才开启。\n\n" +
+            "在“历史记录”里撤销，或把另一个启动器设为桌面，即可关闭它。"
 
-    const val TURN_IT_ON = "Turn it on"
-    const val SWITCH_WITHOUT = "Switch without it"
-    const val NOT_NOW = "Not now"
-    const val TURN_ON = "Turn on"
-    const val GOT_IT = "Got it"
-    const val SERVICE_OFF = "Accessibility service off"
+    const val TURN_IT_ON = "开启它"
+    const val SWITCH_WITHOUT = "不开启也切换"
+    const val NOT_NOW = "以后再说"
+    const val TURN_ON = "开启"
+    const val GOT_IT = "知道了"
+    const val SERVICE_OFF = "无障碍服务已关闭"
 
     /** The TV page's card while the launcher on Home has its service off; [other] is the launcher Home may still open. */
-    fun serviceOffTitle(other: String?) = "Home may open ${other ?: TV_OWN_LAUNCHER}"
+    fun serviceOffTitle(other: String?) = "Home 键可能打开 ${other ?: TV_OWN_LAUNCHER}"
 
-    const val TV_OWN_LAUNCHER = "the TV's own launcher"
+    const val TV_OWN_LAUNCHER = "电视自带的启动器"
 
     /** Install a home screen: the Apps tab's card, the picker, the wait for the Store, and its dead ends. */
-    const val BETTER_HOME = "Get a better home screen"
+    const val BETTER_HOME = "换个更好的桌面"
 
     fun betterHomeText(current: String?) =
-        "Swap ${current ?: "the TV's home screen"} for a launcher without ads. Free on the Play Store; switch back any time."
+        "把 ${current ?: "电视桌面"} 换成没有广告的启动器。Play 商店免费提供，随时可以切换回去。"
 
-    const val CHOOSE_ONE = "Choose one"
-    const val CHOOSE_HOME = "Choose a home screen"
-    const val CHOOSE_HOME_TEXT = "Each one replaces the TV's home screen. Tellyscope opens it in the Play Store on the TV; you install it with the remote."
-    const val RECOMMENDED = "Recommended"
-    const val USES_SERVICE = "Uses an accessibility service"
-    const val NO_SERVICE = "Open source · no accessibility service"
-    const val NOT_AFFILIATED = "Tellyscope isn't affiliated with any of these launchers or their developers."
-    const val OPEN_IN_STORE = "Open in Play Store"
-    const val INSTALL_HOME = "Install a home screen"
-    const val INSTALL_IT = "Install it on your TV"
+    const val CHOOSE_ONE = "选一个"
+    const val CHOOSE_HOME = "选一个桌面"
+    const val CHOOSE_HOME_TEXT = "每个都会替换电视桌面。Tellyscope 会在电视上的 Play 商店里打开它，你用遥控器安装。"
+    const val RECOMMENDED = "推荐"
+    const val USES_SERVICE = "使用无障碍服务"
+    const val NO_SERVICE = "开源 · 不使用无障碍服务"
+    const val NOT_AFFILIATED = "Tellyscope 与这些启动器及其开发者均无关联。"
+    const val OPEN_IN_STORE = "在 Play 商店中打开"
+    const val INSTALL_HOME = "安装一个桌面"
+    const val INSTALL_IT = "在电视上安装它"
 
     fun installItText(name: String) =
-        "The Play Store is open on the TV, on $name's page. Use the remote to select Install. Tellyscope moves on by itself once it's installed."
+        "电视上的 Play 商店已打开 $name 的页面。用遥控器选择安装，装好后 Tellyscope 会自动继续。"
 
-    fun storeOn(tv: String) = "Play Store on $tv"
+    fun storeOn(tv: String) = "$tv 上的 Play 商店"
 
-    const val WAITING_INSTALL = "Waiting for install…"
-    const val DOWNLOADS_TAKE = "Downloads can take a minute. Tellyscope can't see the download, only when it's done."
-    const val OPEN_STORE_AGAIN = "Open Play Store again"
-    const val MAKE_IT_HOME = "Make it the home screen?"
+    const val WAITING_INSTALL = "正在等待安装…"
+    const val DOWNLOADS_TAKE = "下载可能需要一分钟。Tellyscope 看不到下载过程，只能看到是否装好。"
+    const val OPEN_STORE_AGAIN = "再次打开 Play 商店"
+    const val MAKE_IT_HOME = "把它设为桌面吗？"
 
-    fun isInstalled(name: String) = "$name is installed."
+    fun isInstalled(name: String) = "$name 已安装。"
 
-    fun launcherLater(name: String) = "$name is installed. To use it later, choose $MAKE_HOME on it in Tweaks, under $HOME_SCREEN."
+    fun launcherLater(name: String) = "$name 已安装。以后要用时，在“小工具”→“桌面”里对它选择“设为桌面”。"
 
-    fun launcherInstalled(name: String) = "$name is installed. Press Home on the remote to pick it."
+    fun launcherInstalled(name: String) = "$name 已安装。按遥控器的 Home 键选择它。"
 
-    fun launcherIsHome(name: String) = "$name is already your home screen."
+    fun launcherIsHome(name: String) = "$name 已经是你的桌面了。"
 
-    const val NO_STORE = "The Play Store didn't open"
+    const val NO_STORE = "Play 商店没有打开"
 
     fun noStoreText(tv: String, name: String) =
-        "$tv didn't open the Play Store for Tellyscope. On the TV, open the Play Store yourself and search for $name. " +
-            "Tellyscope keeps watching and moves on once it's installed."
+        "$tv 没有为 Tellyscope 打开 Play 商店。请在电视上自己打开 Play 商店并搜索 $name。" +
+            "Tellyscope 会继续留意，装好后自动继续。"
 
-    const val CHOOSE_ANOTHER = "Choose another"
+    const val CHOOSE_ANOTHER = "换一个"
 
-    fun notInstalled(name: String) = "$name isn't installed"
+    fun notInstalled(name: String) = "$name 未安装"
 
     const val NOT_INSTALLED_TEXT =
-        "The Play Store closed on the TV before it was installed. If the Store said it isn't available for this TV, choose another launcher."
+        "Play 商店在电视上安装完成前就关掉了。如果商店说这台电视不支持，就换一个启动器。"
 
     /** The Tweaks row that reopens it after Not now on the card. */
 
-    fun serviceOffText(app: String) = "$app's accessibility service is off, so the TV can take Home back."
+    fun serviceOffText(app: String) = "$app 的无障碍服务已关闭，电视可能会把 Home 键夺回去。"
 
     private val GOOGLE_HOMES = setOf("com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx")
 
@@ -224,19 +224,19 @@ object Copy {
      * actually does.
      */
     fun undo(undo: Action) = when (undo) {
-        Action.Open -> "Open again"
+        Action.Open -> "再次打开"
         Action.Disable -> button(Action.Disable)
-        else -> "Undo"
+        else -> "撤销"
     }
 
     fun ago(at: Long, now: Long): String {
         val s = ((now - at) / 1000).coerceAtLeast(0)
         return when {
-            s < 10 -> "just now"
-            s < 60 -> "$s s ago"
-            s < 3600 -> "${s / 60} min ago"
-            s < 86_400 -> "${s / 3600} h ago"
-            else -> "${s / 86_400} d ago"
+            s < 10 -> "刚刚"
+            s < 60 -> "$s 秒前"
+            s < 3600 -> "${s / 60} 分钟前"
+            s < 86_400 -> "${s / 3600} 小时前"
+            else -> "${s / 86_400} 天前"
         }
     }
 
@@ -273,7 +273,7 @@ object Copy {
 
     fun mb(v: Int) = if (v >= 1024) "%.1f GB".format(v / 1024.0) else "$v MB"
 
-    fun uninstallTitle(app: String) = "Uninstall $app?"
+    fun uninstallTitle(app: String) = "卸载 $app 吗？"
 
     /** The confirm for the launcher on Home: Home goes back first, and a failed step stops it. */
     fun uninstallHome(app: String, back: String, service: Boolean) = listOfNotNull(
@@ -285,35 +285,35 @@ object Copy {
     ).joinToString("\n\n")
 
     /** The Apps tabs' header over the apps the TV needs, and why they're apart. */
-    const val SYSTEM = "System"
-    const val SYSTEM_WHY = "Needed by the TV · can't be changed"
+    const val SYSTEM = "系统"
+    const val SYSTEM_WHY = "电视必需 · 无法更改"
 
     /** Debloat with nothing left on the list: what's done, what's next, then Apps. */
-    const val GATE_TITLE = "Everything on the list is off"
-    const val GATE_DONE = "All the apps the cleanyourtv list suggests for this TV are already off."
-    const val GATE_LAUNCHER = "To trim it further, switch to a minimal home screen. It replaces the TV's own, with its ads and suggestions."
-    const val GATE_APPS = "You can still choose, app by app, what to keep or turn off in Apps."
-    const val GO_TO_APPS = "Go to Apps"
-    const val DONT_SHOW_AGAIN = "Don't show again"
+    const val GATE_TITLE = "清单上的应用已全部关闭"
+    const val GATE_DONE = "cleanyourtv 清单建议这台电视关闭的应用已经全部关闭了。"
+    const val GATE_LAUNCHER = "想再精简，就换一个极简桌面。它会替换电视自带的、带广告和推荐的桌面。"
+    const val GATE_APPS = "你仍然可以在“应用”里逐个选择保留或关闭哪些应用。"
+    const val GO_TO_APPS = "去“应用”看看"
+    const val DONT_SHOW_AGAIN = "不再显示"
 
     /** Apps, while the TV's app list is being read. */
-    const val READING_APPS = "Reading the TV's apps…"
-    const val READING_APPS_LINE = "This takes a few seconds."
+    const val READING_APPS = "正在读取电视的应用…"
+    const val READING_APPS_LINE = "需要几秒钟。"
 
     /** Running, with no word from the TV. */
-    const val TV_OFFLINE = "TV offline"
-    const val RUNNING_OFFLINE = "Running apps show here once the TV is connected."
+    const val TV_OFFLINE = "电视离线"
+    const val RUNNING_OFFLINE = "连接电视后，正在运行的应用会显示在这里。"
 
     const val ANDROID_SYSTEM = AppNames.SYSTEM
 
     /** The word next to the status dot, so the state never rests on colour alone. */
     fun state(s: DeviceState) = when (s) {
-        DeviceState.Online -> "Connected"
-        DeviceState.Offline -> "Offline"
-        DeviceState.NotAllowed -> "Not allowed"
-        DeviceState.Waiting -> "Connecting"
-        DeviceState.NeedsPairing -> "Needs the pairing code"
-        DeviceState.Found -> "Not connected"
+        DeviceState.Online -> "已连接"
+        DeviceState.Offline -> "离线"
+        DeviceState.NotAllowed -> "未获授权"
+        DeviceState.Waiting -> "正在连接"
+        DeviceState.NeedsPairing -> "需要配对码"
+        DeviceState.Found -> "未连接"
     }
 
     /** Under 10 GB a whole number hides too much: a 1.5 GB TV isn't a 2 GB one. */
@@ -331,20 +331,20 @@ object Copy {
 
     /** An offline TV that has never sent stats; a refusing TV is on, it just hasn't allowed us. */
     fun noStats(s: DeviceState) =
-        if (s == DeviceState.NotAllowed) "Stats show up once the TV allows this phone."
-        else "No stats yet. They show up once the TV is back on."
+        if (s == DeviceState.NotAllowed) "电视允许这部手机后，状态数据就会显示。"
+        else "还没有状态数据。电视重新开机后就会显示。"
 
-    const val WRONG_CODE = "That code didn't work. Check the 6 digits on the TV and try again."
-    const val UNREACHABLE = "The TV didn't answer. Check it's on and on the same Wi-Fi as this phone, then try again."
-    const val PAIR_INSTEAD = "The TV didn't let this phone in yet. Pair it once with the code from the TV."
-    const val LOGGED_OUT = "You were logged out"
+    const val WRONG_CODE = "配对码不对。请核对电视上的 6 位数字再试一次。"
+    const val UNREACHABLE = "电视没有回应。请确认电视已开机、与手机在同一 Wi-Fi，再试一次。"
+    const val PAIR_INSTEAD = "电视还没有放行这部手机。请用电视上的配对码配对一次。"
+    const val LOGGED_OUT = "你已被登出"
     const val LOGGED_OUT_WHY =
-        "The TV removed this phone's access. Tellyscope disconnected and stopped asking, so nothing pops up on the TV until you connect again."
+        "电视移除了这部手机的权限。Tellyscope 已断开并不再请求，直到你重新连接，电视上不会再弹出提示。"
     val LOGGED_OUT_CAUSES = listOf(
-        "Revoke USB debugging authorisations was chosen on the TV.",
-        "Remove all other access was used from another phone, or from another Tellyscope build on this phone.",
+        "电视上选择了“撤销 USB 调试授权”。",
+        "另一部手机（或这部手机上的另一个 Tellyscope 版本）使用了“移除其他所有访问”。",
     )
-    fun loggedOutOf(name: String) = "Logged out of $name"
+    fun loggedOutOf(name: String) = "已登出 $name"
 
     /** When the TV took the access back, on the logged-out page. */
     fun loggedOutAt(at: Long, now: Long): String {
@@ -352,9 +352,9 @@ object Copy {
         val zone = ZoneId.systemDefault()
         val days = ChronoUnit.DAYS.between(Instant.ofEpochMilli(at).atZone(zone).toLocalDate(), Instant.ofEpochMilli(now).atZone(zone).toLocalDate())
         return when {
-            now - at < 5 * 60_000 -> "Logged out just now"
-            days == 0L -> "Logged out today, " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(at))
-            days == 1L -> "Logged out yesterday"
+            now - at < 5 * 60_000 -> "刚刚登出"
+            days == 0L -> "今天登出，" + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(at))
+            days == 1L -> "昨天登出"
             else -> "Logged out $days days ago"
         }
     }
@@ -370,10 +370,10 @@ object Copy {
         val ram = if (s.ramTotalMb > 0) s.ramUsedMb.toDouble() / s.ramTotalMb else null
         val most = heaviest.take(2).takeIf { it.isNotEmpty() }?.let { ": ${it.joinToString(" and ")} use the most" }.orEmpty()
         return when {
-            storage != null && storage >= FULL -> Health(false, "Storage almost full")
-            ram != null && ram >= FULL -> Health(false, "Memory almost full$most")
-            (s.tempC ?: 0) >= HOT_C -> Health(false, "Running hot")
-            else -> Health(true, "Running fine")
+            storage != null && storage >= FULL -> Health(false, "存储空间快满了")
+            ram != null && ram >= FULL -> Health(false, "内存快满了$most")
+            (s.tempC ?: 0) >= HOT_C -> Health(false, "运行温度过高")
+            else -> Health(true, "运行正常")
         }
     }
 
@@ -388,47 +388,47 @@ object Copy {
     }
 
     fun folder(f: TvFolder) = when (f) {
-        TvFolder.DOWNLOAD -> "Download"
-        TvFolder.MOVIES -> "Movies"
+        TvFolder.DOWNLOAD -> "下载"
+        TvFolder.MOVIES -> "影片"
     }
 
     // Sideload
 
     fun installButton(kind: InstallKind) = when (kind) {
-        InstallKind.NEW -> "Install"
-        InstallKind.UPDATE -> "Update"
-        InstallKind.REINSTALL -> "Reinstall"
-        InstallKind.DOWNGRADE -> "Install older version"
+        InstallKind.NEW -> "安装"
+        InstallKind.UPDATE -> "更新"
+        InstallKind.REINSTALL -> "重新安装"
+        InstallKind.DOWNGRADE -> "安装旧版本"
     }
 
     fun installKind(kind: InstallKind, onTv: String?, picked: String?) = when (kind) {
-        InstallKind.NEW -> "Not on this TV yet. This installs it."
-        InstallKind.UPDATE -> "Updates the TV's copy" + versions(onTv, picked) + ". Its settings stay."
-        InstallKind.REINSTALL -> "The TV already has this version" + (onTv?.let { " ($it)" } ?: "") + ". This installs it again over itself."
-        InstallKind.DOWNGRADE -> "This is older than the one on the TV" +
+        InstallKind.NEW -> "这台电视上还没有。点一下即可安装。"
+        InstallKind.UPDATE -> "更新电视上的版本" + versions(onTv, picked) + "。设置会保留。"
+        InstallKind.REINSTALL -> "电视上已经是这个版本" + (onTv?.let { " ($it)" } ?: "") + "。这会再装一次覆盖它。"
+        InstallKind.DOWNGRADE -> "这个版本比电视上的旧" +
             (if (onTv != null && picked != null) " ($picked here, $onTv on the TV)" else "") +
-            ". Android normally refuses that, and the app's saved data may not work with the older version."
+            "。Android 通常会拒绝降级，而且应用保存的数据可能与旧版本不兼容。"
     }
 
     private fun versions(onTv: String?, picked: String?) =
         if (onTv != null && picked != null) " from $onTv to $picked" else ""
 
-    const val ALLOW_DOWNGRADE = "Install the older version anyway"
-    const val INSTALL_KEEP_OPEN = "Keep Tellyscope open until it's done."
+    const val ALLOW_DOWNGRADE = "仍要安装旧版本"
+    const val INSTALL_KEEP_OPEN = "安装完成前请保持 Tellyscope 打开。"
 
     fun installed(kind: InstallKind, app: String) = when (kind) {
-        InstallKind.UPDATE -> "Updated $app."
-        InstallKind.REINSTALL -> "Reinstalled $app."
-        InstallKind.NEW, InstallKind.DOWNGRADE -> "Installed $app."
+        InstallKind.UPDATE -> "已更新 $app。"
+        InstallKind.REINSTALL -> "已重新安装 $app。"
+        InstallKind.NEW, InstallKind.DOWNGRADE -> "已安装 $app。"
     }
 
     fun installRefused(reason: InstallRefusal, app: String) = when (reason) {
         InstallRefusal.SIGNATURE ->
             "The $app on the TV comes from a different developer, so Android won't replace it. If you're sure, uninstall it first: from Apps here if you installed it, or on the TV."
         InstallRefusal.DOWNGRADE -> "The TV has a newer $app and won't go back to an older one."
-        InstallRefusal.NO_SPACE -> "The TV is out of space. Disable or uninstall something there, then try again."
+        InstallRefusal.NO_SPACE -> "电视空间不足。请先在电视上禁用或卸载一些东西，再试一次。"
         InstallRefusal.TV_SAID_NO ->
-            "The TV blocked the install. Look in the TV's security settings for installing apps from unknown sources, or for app verification, then try again."
+            "电视阻止了安装。请在电视的安全设置里查看“安装未知来源应用”或“应用验证”，再试一次。"
         InstallRefusal.TV_TOO_OLD -> "$app needs a newer version of Android than this TV has."
         InstallRefusal.WRONG_CPU ->
             "This $app is built for a different kind of processor. Look for a version made for this TV, often marked armeabi-v7a or arm64-v8a."
@@ -438,91 +438,91 @@ object Copy {
             "$app comes in several parts and one is missing. Pick all of its .apk files together, or its .apks bundle."
         InstallRefusal.TEST_ONLY -> "This is a developer test build of $app, which the TV won't install."
         InstallRefusal.CONFLICT -> "Another app on the TV already uses something $app needs, so the TV refused it."
-        InstallRefusal.BROKEN -> "This file isn't a working app. It may be damaged or only half downloaded; try getting it again."
-        InstallRefusal.UNKNOWN -> "The TV didn't install $app."
+        InstallRefusal.BROKEN -> "这个文件不是可用的应用。可能已损坏或只下载了一半，请重新获取。"
+        InstallRefusal.UNKNOWN -> "电视没有安装 $app。"
     }
 
-    const val NOT_AN_APP = "That file isn't an Android app. Pick an .apk, several split .apk files, or an .apks or .xapk bundle."
-    const val SIDELOAD_LOST = "Lost the TV partway through. Check it's still on and connected, then try again."
+    const val NOT_AN_APP = "这个文件不是 Android 应用。请选择 .apk、多个分包 .apk 文件，或 .apks / .xapk 安装包。"
+    const val SIDELOAD_LOST = "中途与电视断开了。请确认电视仍开机并已连接，再试一次。"
 
     // Files
 
     fun sent(name: String, savedAs: String, f: TvFolder) =
-        if (savedAs == name) "Sent $name to ${folder(f)}" else "Sent to ${folder(f)} as $savedAs, since $name was already there"
+        if (savedAs == name) "已将 $name 发送到${folder(f)}" else "Sent to ${folder(f)} as $savedAs, since $name was already there"
 
-    fun saved(name: String) = "Saved $name to your phone"
-    fun sendFailed(name: String) = "Couldn't send $name. Check the TV is still connected and has space."
-    fun saveFailed(name: String) = "Couldn't save $name. Check the TV is still connected and the phone has space."
+    fun saved(name: String) = "已将 $name 保存到手机"
+    fun sendFailed(name: String) = "无法发送 $name。请确认电视仍连接且有剩余空间。"
+    fun saveFailed(name: String) = "无法保存 $name。请确认电视仍连接且手机有剩余空间。"
 
-    const val CANCELLED_SEND = "Cancelled. Nothing was left on the TV."
-    const val CANCELLED_SAVE = "Cancelled. Nothing was saved."
-    const val CANT_READ = "Couldn't read that file on your phone."
-    const val CANT_UNDO = "This version of Tellyscope can't undo that setting."
-    const val FILES_LOST = "Couldn't read this folder. Check the TV is still connected."
+    const val CANCELLED_SEND = "已取消。电视上没有留下任何东西。"
+    const val CANCELLED_SAVE = "已取消。没有保存任何东西。"
+    const val CANT_READ = "无法读取手机上的这个文件。"
+    const val CANT_UNDO = "这个版本的 Tellyscope 无法撤销该设置。"
+    const val FILES_LOST = "无法读取这个文件夹。请确认电视仍连接。"
 
     // Remote
 
-    const val KEY_REFUSED = "The TV didn't take that key."
-    const val TYPE_REFUSED = "The TV didn't take the text. Select a text box on the TV first, then send again."
-    const val REMOTE_LOST = "Lost the TV. Check it's still on and connected."
-    const val NO_UPDATE_SCREEN = "This TV has no update screen Tellyscope can open. Look in its Settings, under System or About."
-    const val UPDATES_OPENED = "Opened the update screen on the TV. Look at the TV to check for updates."
-    const val REBOOT_REFUSED = "The TV said no to restarting. Use its own remote or power button instead."
-    const val REBOOT_IGNORED = "The TV didn't restart. Use its own remote or power button instead."
-    const val REMOTE_OFFLINE_WAKE = "works again once it reconnects"
-    const val TYPE_HINT = "Select a text box on the TV, like a search box, then type here."
-    const val BACKSPACE = "Delete the last letter you typed on the TV"
-    const val SCREEN_OFF = "Screen off"
-    const val SCREEN_ON = "Screen on"
-    const val SCREEN_OFF_WAKE = "tap any key to wake"
-    const val SCREEN_OFF_TIP = "Turns off the TV's picture. The app stays connected; any key wakes it."
-    const val SCREEN_OFF_REFUSED = "This TV can't turn its picture off from Tellyscope."
-    const val SCREEN_ON_REFUSED = "The TV's picture didn't come back on. Try again, or restart the TV."
+    const val KEY_REFUSED = "电视没有接受这个按键。"
+    const val TYPE_REFUSED = "电视没有接受这段文字。请先在电视上选中一个输入框，再发送。"
+    const val REMOTE_LOST = "与电视断开了。请确认电视仍开机并已连接。"
+    const val NO_UPDATE_SCREEN = "这台电视没有 Tellyscope 能打开的更新页面。请在电视的“设置”→“系统”或“关于”里找。"
+    const val UPDATES_OPENED = "已在电视上打开更新页面。请看电视检查更新。"
+    const val REBOOT_REFUSED = "电视拒绝重启。请改用它自己的遥控器或电源键。"
+    const val REBOOT_IGNORED = "电视没有重启。请改用它自己的遥控器或电源键。"
+    const val REMOTE_OFFLINE_WAKE = "重新连接后即可恢复"
+    const val TYPE_HINT = "先在电视上选中一个输入框（比如搜索框），再在这里输入。"
+    const val BACKSPACE = "删除在电视上输入的最后一个字"
+    const val SCREEN_OFF = "关屏"
+    const val SCREEN_ON = "开屏"
+    const val SCREEN_OFF_WAKE = "按任意键唤醒"
+    const val SCREEN_OFF_TIP = "关闭电视画面。应用保持连接，按任意键即可唤醒。"
+    const val SCREEN_OFF_REFUSED = "这台电视无法通过 Tellyscope 关闭画面。"
+    const val SCREEN_ON_REFUSED = "电视画面没有恢复。请再试一次，或重启电视。"
 
     fun cantType(text: String): String {
         val odd = text.firstOrNull { it !in ' '..'~' }
         return when {
-            text.isEmpty() -> "Type something first."
+            text.isEmpty() -> "请先输入内容。"
             text.length > app.tellyscope.adb.Remote.MAX_TEXT -> "That's too long to send in one go. Send up to ${app.tellyscope.adb.Remote.MAX_TEXT} characters at a time."
-            odd == '\n' || odd == '\t' -> "The TV can only take one line at a time."
+            odd == '\n' || odd == '\t' -> "电视一次只能输入一行。"
             odd != null -> "The TV can only type plain letters, numbers and symbols, not \u201c$odd\u201d."
             else -> "The TV reads \u201c%s\u201d as a space, so it can't type that."
         }
     }
 
-    const val REMOTE_RESTART = "Restart TV"
-    const val REBOOT_TITLE = "Restart the TV?"
-    const val REBOOT_TEXT = "The TV turns off and on again. Tellyscope reconnects by itself when it's back, usually within a minute."
-    const val RESTARTING_TITLE = "Restarting…"
-    const val RESTARTING_TEXT = "The TV is restarting. Tellyscope will reconnect by itself."
-    const val RESTART_LATE_TITLE = "The TV hasn't come back yet"
-    const val RESTART_LATE_STATUS = "Not back yet"
-    const val RESTART_LATE_TEXT = "It's been a minute. Some TVs take longer to start; Retry waits another minute."
-    const val RESTART_LOST_TEXT = "Use the TV's own remote to turn it on, then tap Retry."
+    const val REMOTE_RESTART = "重启电视"
+    const val REBOOT_TITLE = "重启电视吗？"
+    const val REBOOT_TEXT = "电视会先关机再开机。回来后 Tellyscope 会自动重新连接，通常在一分钟内。"
+    const val RESTARTING_TITLE = "正在重启…"
+    const val RESTARTING_TEXT = "电视正在重启。Tellyscope 会自动重新连接。"
+    const val RESTART_LATE_TITLE = "电视还没有回来"
+    const val RESTART_LATE_STATUS = "还没回来"
+    const val RESTART_LATE_TEXT = "已经过去一分钟了。有些电视启动较慢；点“重试”会再等一分钟。"
+    const val RESTART_LOST_TEXT = "请用电视自己的遥控器开机，再点“重试”。"
 
     fun waitingFor(name: String, ms: Long): String {
         val s = (ms / 1000).coerceAtLeast(0)
-        return "Waiting for $name · ${s / 60}:${(s % 60).toString().padStart(2, '0')}"
+        return "正在等待 $name · ${s / 60}:${(s % 60).toString().padStart(2, '0')}"
     }
 
-    fun restartLost(name: String) = "Still can't reach $name"
-    fun backOnline(name: String) = "Back online. $name reconnected."
+    fun restartLost(name: String) = "仍然连不上 $name"
+    fun backOnline(name: String) = "已恢复在线。$name 已重新连接。"
 
     // Dock
 
-    const val ADD_TO_DOCK = "Add to dock"
-    const val DOCK_EMPTY = "Dock up to four TV apps, one tap to open."
-    const val DOCK_PICK_TITLE = "Add an app to the dock"
-    const val DOCK_PICK_HINT = "Tap an app to add it."
-    const val DOCK_ADDED = "Added"
-    const val DOCK_NO_APPS = "Still reading the TV's apps. Open this again in a moment."
-    const val DOCK_CHANGE = "Change app"
-    const val DOCK_REMOVE = "Remove from dock"
-    const val DOCK_REORDER = "Keep holding and move to reorder"
+    const val ADD_TO_DOCK = "添加到 Dock"
+    const val DOCK_EMPTY = "Dock 最多放 4 个电视应用，点一下即可打开。"
+    const val DOCK_PICK_TITLE = "向 Dock 添加应用"
+    const val DOCK_PICK_HINT = "点一个应用即可添加。"
+    const val DOCK_ADDED = "已添加"
+    const val DOCK_NO_APPS = "仍在读取电视的应用。过一会儿再打开。"
+    const val DOCK_CHANGE = "更换应用"
+    const val DOCK_REMOVE = "从 Dock 移除"
+    const val DOCK_REORDER = "长按并移动可调整顺序"
 
-    fun dockPickFrom(name: String) = "Apps installed on $name"
-    fun dockSwap(label: String) = "Put another app in $label's place"
-    fun cantOpen(label: String) = "The TV couldn't open $label. If it's turned off, turn it on in Apps."
+    fun dockPickFrom(name: String) = "$name 上已安装的应用"
+    fun dockSwap(label: String) = "用另一个应用替换 $label 的位置"
+    fun cantOpen(label: String) = "电视无法打开 $label。如果它被关闭了，请在“应用”里重新开启。"
 
     fun leftDock(labels: List<String>) =
         if (labels.size == 1) "${labels[0]} was uninstalled, so it left the dock."
@@ -530,71 +530,71 @@ object Copy {
 
     fun restarting(minutes: Long) =
         if (minutes < 3) "Tellyscope reconnects on its own when the TV is back, usually within a couple of minutes."
-        else "Taking a while. Some TVs turn network debugging off when they restart. If it doesn't come back, turn it on again in the TV's Developer options."
+        else "有点慢。有些电视重启后会关闭网络调试。如果一直回不来，请在电视的“开发者选项”里重新打开。"
 
-    const val TWEAKS = "TV tweaks"
-    const val DNS_TITLE = "Block ads with Private DNS"
-    fun dnsState(host: String?) = host?.let { "On: $it" } ?: "Off. Turn on to block ads and trackers in every app on the TV."
-    const val DNS_TOO_OLD = "Needs Android 9 or newer. This TV is older."
-    const val DNS_DIALOG = "Block ads on the whole TV?"
+    const val TWEAKS = "电视小工具"
+    const val DNS_TITLE = "用 Private DNS 屏蔽广告"
+    fun dnsState(host: String?) = host?.let { "On: $it" } ?: "已关闭。开启后可屏蔽电视上所有应用里的广告和追踪器。"
+    const val DNS_TOO_OLD = "需要 Android 9 或更高版本。这台电视版本较旧。"
+    const val DNS_DIALOG = "在整台电视上屏蔽广告吗？"
     const val DNS_TEXT = "The TV will look up every address through this ad-blocking DNS provider. AdGuard is free and needs no account. " +
         "Tellyscope then checks the TV can still look addresses up, and puts it back if not. Undo is in History."
-    const val DNS_FIELD = "DNS provider"
-    const val DNS_BAD = "Enter a hostname like dns.adguard-dns.com. An IP address won't work here."
-    const val DNS_CONFIRM = "Turn on"
-    const val ANIMATIONS_TITLE = "Faster animations"
+    const val DNS_FIELD = "DNS 提供商"
+    const val DNS_BAD = "请输入类似 dns.adguard-dns.com 的主机名，IP 地址在这里无效。"
+    const val DNS_CONFIRM = "开启"
+    const val ANIMATIONS_TITLE = "加快动画"
     fun animationsState(scale: String?) =
-        if (scale == TvSettings.FAST) "On: menus move at twice the speed"
-        else "Off. Turn on to make menus feel snappier."
-    const val CACHES_TITLE = "Clear all app caches"
-    const val CACHES_TEXT = "Frees space by clearing every app's temporary files. App data and sign-ins stay."
-    const val CACHES_BUTTON = "Clear caches"
+        if (scale == TvSettings.FAST) "已开启：菜单移动速度翻倍"
+        else "已关闭。开启后菜单会感觉更跟手。"
+    const val CACHES_TITLE = "清除所有应用缓存"
+    const val CACHES_TEXT = "清除每个应用的临时文件来释放空间。应用数据和登录状态会保留。"
+    const val CACHES_BUTTON = "清除缓存"
     fun cachesCleared(freedKb: Long?) =
-        if (freedKb == null || freedKb <= 0) "Cleared app caches" else "Cleared app caches, freed ${bytes(freedKb * 1024)}"
-    const val SCREENSHOT_TITLE = "Screenshot"
-    const val SCREENSHOT_TEXT = "Saves what the TV shows to your phone. Protected video, like most streaming apps, shows as black."
-    const val SCREENSHOT_BUTTON = "Take screenshot"
+        if (freedKb == null || freedKb <= 0) "已清除应用缓存" else "Cleared app caches, freed ${bytes(freedKb * 1024)}"
+    const val SCREENSHOT_TITLE = "截图"
+    const val SCREENSHOT_TEXT = "把电视画面保存到手机。受保护的视频（比如大多数流媒体应用）会显示为黑色。"
+    const val SCREENSHOT_BUTTON = "截图"
     fun screenshotName(at: Long) =
         "TV screenshot " + SimpleDateFormat("yyyy-MM-dd HH.mm.ss", Locale.ROOT).format(Date(at)) + ".png"
-    const val SCREENSHOT_SAVED = "Screenshot saved to your phone"
-    const val SCREENSHOT_FAILED = "Couldn't take a screenshot. Check the TV is still connected."
-    const val REQUEST_TITLE = "Another device wants to control this TV"
-    const val REQUEST_TEXT = "The TV is asking whether to allow debugging from a device with this key fingerprint. " +
-        "Allow it only if you started this yourself and the fingerprint matches the one that device shows."
-    const val REQUEST_ALWAYS = "Always allow this device"
-    const val REQUEST_ALLOW = "Allow"
-    const val REQUEST_DENY = "Deny"
-    const val REQUEST_ALLOWED = "Allowed. That device can control the TV now."
-    const val REQUEST_DENIED = "Denied. That device can't connect."
-    const val REQUEST_GONE = "The TV's prompt had closed or changed, so nothing was pressed."
+    const val SCREENSHOT_SAVED = "截图已保存到手机"
+    const val SCREENSHOT_FAILED = "无法截图。请确认电视仍连接。"
+    const val REQUEST_TITLE = "另一台设备想控制这台电视"
+    const val REQUEST_TEXT = "电视正在询问是否允许一台设备用这个密钥指纹进行调试。" +
+        "只有当你自己发起、且指纹与那台设备显示的一致时，才允许。"
+    const val REQUEST_ALWAYS = "始终允许这台设备"
+    const val REQUEST_ALLOW = "允许"
+    const val REQUEST_DENY = "拒绝"
+    const val REQUEST_ALLOWED = "已允许。那台设备现在可以控制电视了。"
+    const val REQUEST_DENIED = "已拒绝。那台设备无法连接。"
+    const val REQUEST_GONE = "电视上的提示已关闭或变化，所以什么都没点。"
 
     // Who has access
-    const val WARNING_TITLE = "Another computer is connected to this TV"
-    const val WARNING_TEXT = "It can do everything Tellyscope can: install or remove apps, read files and control the screen."
-    const val ITS_MINE = "It's mine"
-    const val REMOVE_ACCESS = "Remove all other access…"
-    const val CONNECTED_NOW = "Connected now"
-    const val WHO_HAS_ACCESS = "Who has access"
+    const val WARNING_TITLE = "另一台电脑已连接到这台电视"
+    const val WARNING_TEXT = "它能做 Tellyscope 能做的一切：安装或删除应用、读取文件、控制屏幕。"
+    const val ITS_MINE = "是我自己的"
+    const val REMOVE_ACCESS = "移除其他所有访问…"
+    const val CONNECTED_NOW = "当前已连接"
+    const val WHO_HAS_ACCESS = "谁有访问权限"
 
     /** The TV menu's rows for the screens it opens. */
-    const val HISTORY = "History"
-    const val ADVANCED_MONITOR = "Advanced monitor"
+    const val HISTORY = "历史记录"
+    const val ADVANCED_MONITOR = "高级监控"
 
     /** In the TV menu and in Settings: opens Android's share sheet with the repo link. */
-    const val SHARE = "Share Tellyscope"
+    const val SHARE = "分享 Tellyscope"
 
     /** Reset TV: its row in the TV menu, its screen, and what it says before, during and after. */
-    const val RESET_TV = "Reset TV to how it shipped"
-    const val RESET_KEEPS = "Keeps apps' data and sign-ins"
+    const val RESET_TV = "把电视恢复到出厂状态"
+    const val RESET_KEEPS = "保留应用数据和登录状态"
 
     fun apps(n: Int) = if (n == 1) "1 app" else "$n apps"
 
     fun resetFound(n: Int) = "$n ${if (n == 1) "change" else "changes"} since this TV left the factory"
-    const val RESET_FOUND_TEXT = "Your apps' data and sign-ins stay. Nothing has changed yet."
+    const val RESET_FOUND_TEXT = "应用数据和登录状态会保留。目前还没有改动任何东西。"
     fun turnOnApps(n: Int) = "Turn on ${apps(n)}"
-    const val TURN_ON_TEXT = "Preinstalled apps turned off by hand, from any phone or tool"
+    const val TURN_ON_TEXT = "手动关闭的预装应用，来自任何手机或工具"
     fun bringBackApps(n: Int) = "Bring back ${apps(n)}"
-    const val BRING_BACK_TEXT = "Preinstalled apps that were uninstalled. They're still on the TV."
+    const val BRING_BACK_TEXT = "已被卸载的预装应用。它们仍在电视上。"
     fun resetHome(to: String) = "Make $to the home screen"
     fun resetHomeText(from: String, service: Boolean) =
         "Instead of $from" + (if (service) ", with its accessibility service turned off" else "") + ". $from stays installed."
@@ -602,9 +602,9 @@ object Copy {
     /** Under what Reset found: what it leaves alone. [maker] is the TV's brand, when known. */
     fun resetLeaves(shippedOff: Int, maker: String?) =
         (if (shippedOff > 0) "${apps(shippedOff)} ${maker ?: "the maker"} shipped switched off stay off. " else "") +
-            "Apps and launchers you installed stay installed."
+            "你安装的应用和启动器会保持安装状态。"
 
-    const val NOTHING_TO_RESET = "Nothing to reset"
+    const val NOTHING_TO_RESET = "没有需要恢复的内容"
     fun nothingToReset(ownHome: String?, maker: String?) =
         "Every preinstalled app is on" + (ownHome?.let { ", and $it is the home screen" } ?: "") + ". " +
             "Apps ${maker ?: "the maker"} shipped switched off stay off."
@@ -612,14 +612,14 @@ object Copy {
     fun resetting(p: ResetProgress, home: String?) = when (p.part) {
         ResetPart.TurnOn -> "Turning on apps: ${p.done} of ${p.of}."
         ResetPart.BringBack -> "Bringing back apps: ${p.done} of ${p.of}."
-        ResetPart.Home -> "Making ${home ?: "the TV's own launcher"} the home screen."
+        ResetPart.Home -> "Making ${home ?: "电视自带的启动器"} the home screen."
     } + " Keep the TV on and connected."
     const val RESETTING = "Resetting…"
-    const val RESET_APPS_STALE = "Reset done, but the app list didn't refresh. Open the TV again to see it."
-    const val RESET_BUTTON = "Reset TV"
+    const val RESET_APPS_STALE = "恢复已完成，但应用列表没有刷新。请重新打开电视查看。"
+    const val RESET_BUTTON = "恢复电视"
 
-    const val RESET_DONE = "TV reset to how it shipped"
-    const val RESET_PARTLY = "Reset partly done"
+    const val RESET_DONE = "电视已恢复到出厂状态"
+    const val RESET_PARTLY = "恢复只完成了一部分"
     fun resetDoneText(apps: Int, home: String?) = listOfNotNull(
         when (apps) {
             0 -> null
@@ -629,20 +629,20 @@ object Copy {
         home?.let { "$it is the home screen" },
     ).joinToString(", and ") + ". Apps' data and sign-ins stayed."
     fun resetPartlyText(failed: Int) =
-        "${if (failed == 1) "One step" else "$failed steps"} didn't work. Everything else is back to how it shipped. Nothing was lost."
+        "${if (failed == 1) "有 1 步" else "$failed 步"}没有成功。其余部分已恢复到出厂状态。没有丢失任何东西。"
     fun turnedOn(done: Int, of: Int) = if (done == of) "Turned on ${apps(of)}" else "Turned on $done of ${apps(of)}"
     fun broughtBack(done: Int, of: Int) = if (done == of) "Brought back ${apps(of)}" else "Brought back $done of ${apps(of)}"
     fun isHome(app: String) = "$app is the home screen"
     fun stillHome(app: String) = "$app is still the home screen"
-    fun tryAgain(app: String?) = if (app != null) "Try $app again" else "Try again"
+    fun tryAgain(app: String?) = if (app != null) "Try $app again" else "再试一次"
 
     /** Debloat while it turns the ticked apps off, then its result. */
     fun disablingApps(done: Int, of: Int) = "Turning off apps: $done of $of. Keep the TV on and connected."
     const val DISABLING = "Disabling…"
-    const val DISABLING_NOTE = "Nothing is deleted. Turn any back on from History."
-    const val DEBLOAT_DONE = "Debloat done"
-    const val DEBLOAT_PARTLY = "Debloat partly done"
-    const val DEBLOAT_RESULT_TEXT = "Nothing was deleted; undo any of them from History."
+    const val DISABLING_NOTE = "不会删除任何东西。可以在“历史记录”里重新开启任何一个。"
+    const val DEBLOAT_DONE = "精简完成"
+    const val DEBLOAT_PARTLY = "精简只完成了一部分"
+    const val DEBLOAT_RESULT_TEXT = "没有删除任何东西；可以在“历史记录”里撤销其中任何一项。"
     fun turnedOff(done: Int, of: Int) = if (done == of) "Turned off ${apps(of)}" else "Turned off $done of ${apps(of)}"
     fun stillOn(app: String) = "$app is still on"
 
@@ -653,29 +653,29 @@ object Copy {
     fun othersConnected(n: Int) = if (n == 1) "1 other connected now" else "$n others connected now"
     fun connections(n: Int) = if (n == 1) "1 connection" else "$n connections"
     fun connectedFrom(address: String, n: Int) = "From $address · ${connections(n)}"
-    const val ON_TV = "An app on this TV"
-    const val ACCESS_INTRO = "Each computer allowed to use ADB can install or remove apps, read files and control the screen."
-    const val THIS_PHONE = "This phone"
+    const val ON_TV = "这台电视上的一个应用"
+    const val ACCESS_INTRO = "每台获得 ADB 授权的电脑都可以安装或删除应用、读取文件、控制屏幕。"
+    const val THIS_PHONE = "这部手机"
     const val TELLYSCOPE = "Tellyscope"
-    const val NOT_THIS_PHONE = "Not this phone"
-    const val YOURS = "Yours"
-    const val ALLOWED_COMPUTERS = "Allowed computers"
-    const val UNNAMED_COMPUTER = "Unnamed computer"
-    const val CANT_CHECK_CONNECTED = "This TV doesn't say who is connected."
-    const val CANT_CHECK_ALLOWED = "This TV doesn't list its allowed computers."
-    const val NOBODY_ALLOWED = "No computer is allowed. The next one to connect has to be allowed on the TV."
-    const val ACCESS_FOOT_LINK = "The TV doesn't say which allowed computer is behind a connection. If you don't recognise an address, remove all other access."
+    const val NOT_THIS_PHONE = "不是这部手机"
+    const val YOURS = "你的"
+    const val ALLOWED_COMPUTERS = "已授权的电脑"
+    const val UNNAMED_COMPUTER = "未命名的电脑"
+    const val CANT_CHECK_CONNECTED = "这台电视没有说明谁已连接。"
+    const val CANT_CHECK_ALLOWED = "这台电视没有列出已授权的电脑。"
+    const val NOBODY_ALLOWED = "没有任何电脑获得授权。下一台连接的电脑需要在电视上获得允许。"
+    const val ACCESS_FOOT_LINK = "电视没有说明某个连接背后是哪台已授权的电脑。如果你不认识某个地址，请移除其他所有访问。"
     const val ACCESS_FOOT_ALL = "Android can't remove one computer on its own: this clears every computer, then you allow Tellyscope again."
     /** Rough on purpose: the TV stamps a key when any connection uses it, not per session. */
     fun lastSeen(at: Long?, now: Long): String {
-        if (at == null) return "Never seen"
+        if (at == null) return "从未出现"
         val days = ((now - at) / 86_400_000).coerceAtLeast(0)
         return when {
-            now - at < 5 * 60_000 -> "Last seen just now"
-            days == 0L -> "Last seen today, " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(at))
-            days == 1L -> "Last seen yesterday"
+            now - at < 5 * 60_000 -> "刚刚出现过"
+            days == 0L -> "今天出现过，" + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(at))
+            days == 1L -> "昨天出现过"
             days < 30 -> "Last seen $days days ago"
-            else -> "Last seen over a month ago"
+            else -> "一个多月前出现过"
         }
     }
     /** Enough of a fingerprint to tell keys apart: the first three and last two pairs. */
@@ -685,61 +685,61 @@ object Copy {
     }
 
     // Remove all other access
-    const val REMOVE_TITLE = "Remove all other access"
-    const val CONFIRM_TITLE = "Remove all other access?"
-    const val CONFIRM_TEXT = "Every computer this TV has allowed loses access, your own computers too: they'll need allowing again."
-    const val CONFIRM_REMOTE = "Tellyscope reconnects straight away. Keep the TV remote handy: the TV asks you to allow this phone."
-    const val CONFIRM_BUTTON = "Remove access"
-    const val CANCEL = "Cancel"
-    const val REVOKING = "Removing access…"
-    const val ALLOW_TITLE = "Allow this phone on the TV"
-    const val ALLOW_TEXT_A = "Other access is removed. The TV now asks “Allow USB debugging?”. Tick "
-    const val ALLOW_ALWAYS = "Always allow from this computer"
-    const val ALLOW_TEXT_B = ", then choose "
-    const val ALLOW_BUTTON = "Allow"
-    const val FINGERPRINT_LABEL = "The TV should show this fingerprint"
-    const val FINGERPRINT_HINT = "If it shows a different one, choose Cancel on the TV."
-    const val STOP_WAITING = "Stop waiting"
-    const val REFUSED = "The TV didn't allow this phone. It may have timed out, or Cancel was chosen."
-    const val ASK_AGAIN = "Ask the TV again"
-    const val CHECKING = "Checking the TV…"
-    const val DONE_TITLE = "Only this phone has access"
-    const val DONE_TEXT = "Tellyscope checked the TV again: this phone is the only allowed computer, and nothing else is connected."
-    const val TRUST_WARNING = "Only allow computers and apps you trust. Anything you allow can install apps, read files and control the TV."
-    fun backTo(tv: String) = "Back to $tv"
-    const val STILL_TITLE = "Another computer is still connected"
+    const val REMOVE_TITLE = "移除其他所有访问"
+    const val CONFIRM_TITLE = "移除其他所有访问吗？"
+    const val CONFIRM_TEXT = "这台电视授权过的所有电脑都会失去访问权限，包括你自己的电脑：它们需要重新获得允许。"
+    const val CONFIRM_REMOTE = "Tellyscope 会立即重新连接。请把电视遥控器放在手边：电视会请你允许这部手机。"
+    const val CONFIRM_BUTTON = "移除访问"
+    const val CANCEL = "取消"
+    const val REVOKING = "正在移除访问…"
+    const val ALLOW_TITLE = "在电视上允许这部手机"
+    const val ALLOW_TEXT_A = "其他访问已移除。电视现在会问“是否允许 USB 调试？”。请勾选 "
+    const val ALLOW_ALWAYS = "始终允许这台电脑"
+    const val ALLOW_TEXT_B = "，然后选择 "
+    const val ALLOW_BUTTON = "允许"
+    const val FINGERPRINT_LABEL = "电视上应显示这个指纹"
+    const val FINGERPRINT_HINT = "如果显示的不同，请在电视上选择“取消”。"
+    const val STOP_WAITING = "停止等待"
+    const val REFUSED = "电视没有允许这部手机。可能已超时，或选择了“取消”。"
+    const val ASK_AGAIN = "再次询问电视"
+    const val CHECKING = "正在检查电视…"
+    const val DONE_TITLE = "只有这部手机有访问权限"
+    const val DONE_TEXT = "Tellyscope 已再次检查电视：这部手机是唯一获得授权的电脑，且没有其他设备连接。"
+    const val TRUST_WARNING = "只允许你信任的电脑和应用。任何获得允许的对象都可以安装应用、读取文件、控制电视。"
+    fun backTo(tv: String) = "回到 $tv"
+    const val STILL_TITLE = "仍有另一台电脑连接着"
     fun stillText(who: String, tv: String) =
         "Tellyscope still sees $who on $tv. It may have connected again straight away. Turn it off or unplug it from the network, then try again."
     fun stillOpenText(who: String, tv: String) =
         "Tellyscope still sees $who on $tv. Its access is gone, but the TV keeps a connection open until it ends. Restart the TV to end it."
-    const val CHECK_AGAIN = "Check again"
-    const val RESTART_TV = "Restart the TV"
-    const val RESTARTING_TO_CHECK = "Restarting the TV…"
+    const val CHECK_AGAIN = "再次检查"
+    const val RESTART_TV = "重启电视"
+    const val RESTARTING_TO_CHECK = "正在重启电视…"
     fun connectionFrom(address: String) = "a connection from $address"
-    const val TRY_AGAIN = "Try again"
-    const val UNCONFIRMED_TITLE = "Revoked on the TV"
-    const val UNCONFIRMED_TEXT = "Tellyscope can't check the list on this TV. Look under Developer options to confirm."
-    const val DONE = "Done"
+    const val TRY_AGAIN = "再试一次"
+    const val UNCONFIRMED_TITLE = "已在电视上撤销"
+    const val UNCONFIRMED_TEXT = "Tellyscope 无法在这台电视上检查清单。请在“开发者选项”里确认。"
+    const val DONE = "完成"
     const val MANUAL_INTRO = "This TV didn't take Tellyscope's request, so it's two steps on the TV. Afterwards only this phone can use ADB on it; your own computers will need allowing again."
-    const val MANUAL_STEP_1 = "Open Developer options on the TV"
+    const val MANUAL_STEP_1 = "在电视上打开“开发者选项”"
     const val MANUAL_STEP_1_TEXT = "Tellyscope opens it for you. If nothing happens on the TV, go to Settings → Device Preferences → Developer options."
-    const val OPEN_ON_TV = "Open on TV"
+    const val OPEN_ON_TV = "在电视上打开"
     const val MANUAL_STEP_2 = "Choose “Revoke USB debugging authorisations”"
     const val MANUAL_STEP_2_TEXT = "Then come back here, and Tellyscope asks the TV to allow this phone again."
-    const val MANUAL_DONE = "I've revoked it"
+    const val MANUAL_DONE = "我已经撤销了"
     const val DEV_OPTIONS_FAILED = "Couldn't open Developer options on the TV. Go to Settings → Device Preferences → Developer options."
 
     // Connected devices
-    const val DEVICES_TITLE = "Connected devices"
+    const val DEVICES_TITLE = "已连接的设备"
     fun showAll(n: Int) = "Show all ($n)"
-    const val SHOW_LESS = "Show less"
-    const val NO_DEVICES = "Nothing plugged in or paired."
+    const val SHOW_LESS = "收起"
+    const val NO_DEVICES = "没有接入或配对的设备。"
     fun group(g: Peripheral.Group) = when (g) {
-        Peripheral.Group.Bluetooth -> "Bluetooth"
-        Peripheral.Group.Input -> "Input"
-        Peripheral.Group.Storage -> "USB storage"
+        Peripheral.Group.Bluetooth -> "蓝牙"
+        Peripheral.Group.Input -> "输入设备"
+        Peripheral.Group.Storage -> "USB 存储"
         Peripheral.Group.Hdmi -> "HDMI-CEC"
-        Peripheral.Group.Audio -> "Audio output"
+        Peripheral.Group.Audio -> "音频输出"
     }
     /** The row's right-hand words. Collapsed rows have no group label, so Bluetooth says so there. */
     fun peripheralStatus(p: Peripheral, grouped: Boolean): String {
